@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CarStatus, Fuel, Transmission } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -11,6 +11,25 @@ export class CarsService {
   constructor(private readonly prismaService: PrismaService) {}
 
   async createCar(createCarDto: any, currentUser: any): Promise<any> {
+    const imgArrs = [
+      'https://res.cloudinary.com/dj1v6wmjv/image/upload/v1706403533/rental-cars-cloudinary/cars/screencapture-localhost-3000-2024-01-26-23_44_09_vfyfsk.png',
+      'https://res.cloudinary.com/dj1v6wmjv/image/upload/v1706403531/rental-cars-cloudinary/cars/Screenshot_2024-01-26_235101_w2y6yk.png',
+      'https://res.cloudinary.com/dj1v6wmjv/image/upload/v1706403531/rental-cars-cloudinary/cars/ERDDiagram_j9dxbc.jpg',
+      'https://res.cloudinary.com/dj1v6wmjv/image/upload/v1706403530/rental-cars-cloudinary/cars/UseCaseDiagram_oq8byi.jpg',
+    ];
+
+    if (createCarDto.images.length < 0) {
+      createCarDto.images = imgArrs;
+    }
+
+    const exitsCar = await this.prismaService.car.findFirst({
+      where: {
+        licensePlates: createCarDto.licensePlates,
+      },
+    });
+
+    if (exitsCar) throw new BadRequestException('Xe đã tồn tại trong hệ thống!');
+
     const model = await this.prismaService.carModel.findFirst({
       where: {
         id: Number(createCarDto.modelId),
@@ -31,19 +50,21 @@ export class CarsService {
         fuel: createCarDto.fuel.toUpperCase() as Fuel,
         description: createCarDto.description,
         pricePerDay: createCarDto.pricePerDay,
-        address: 'createCarDto.address',
+        address: 'Da Nang',
         status: CarStatus.UNAVAILABLE,
         modelId: Number(createCarDto.modelId),
         userId: currentUser.id,
         CarImage: {
-          create: createCarDto.images.map((image) => ({
+          create: createCarDto.images.map((image: string) => ({
             url: image,
           })),
         },
       },
     });
 
-    const carFeatures = await this.prismaService.carFeature.createMany({
+    if (!newCar) throw new BadRequestException('Tạo xe không thành công');
+
+    await this.prismaService.carFeature.createMany({
       data: createCarDto.features.map((feature: any) => ({
         carId: newCar.id,
         featureId: feature,
@@ -788,6 +809,9 @@ export class CarsService {
             feature: true,
           },
         },
+      },
+      orderBy: {
+        updatedAt: 'desc',
       },
     });
 

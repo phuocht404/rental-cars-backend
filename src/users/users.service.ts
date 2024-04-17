@@ -395,6 +395,7 @@ export class UsersService {
         id: Number(currentUser.id),
       },
       data: {
+        name,
         registerOwner: true,
       },
     });
