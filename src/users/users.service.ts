@@ -93,6 +93,7 @@ export class UsersService {
             OrderDetail: {
               select: {
                 carId: true,
+                orderDetailStatus: true,
               },
             },
             orderStatus: true,
@@ -142,12 +143,17 @@ export class UsersService {
         },
         createdAt: true,
         updatedAt: true,
+        Order: {
+          where: {
+            orderStatus: 'COMPLETED',
+          },
+        },
       },
     });
 
     if (!user) throw new NotFoundException(`User with username ${username} not found`);
 
-    return { ...user, role: user.role.name };
+    return { ...user, role: user.role.name, trips: user.Order.length, Order: undefined };
   }
 
   async getProfile(currentUser: any): Promise<any> {

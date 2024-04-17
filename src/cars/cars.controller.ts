@@ -195,9 +195,22 @@ export class CarsController {
     @Query('limit') limit: number = 12,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Query('sortPrice') sortPrice: string,
+    @Query('priceRange') priceRange: number[],
+    @Query('seats') seats: number[],
+    @Query('brandId') brandId: number,
+    @Query('modelId') modelId: number,
   ): Promise<any> {
     try {
-      return this.carsService.searchCars(page, limit, startDate, endDate);
+      const filter = {
+        sortPrice,
+        priceRange,
+        seats,
+        brandId,
+        modelId,
+      };
+
+      return this.carsService.searchCars(page, limit, startDate, endDate, filter);
     } catch (e) {
       throw new InternalServerErrorException(e);
     }

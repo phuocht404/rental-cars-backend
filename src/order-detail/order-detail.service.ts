@@ -1,14 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { OrderDetailStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { formatDecimalToNumber, getPagination } from 'utils/utils';
+import { formatDateToDMY, formatDecimalToNumber, getPagination } from 'utils/utils';
 
 import { CreateOrderDetailDto } from './dto/create-order-detail.dto';
 import { UpdateOrderDetailDto } from './dto/update-order-detail.dto';
+import { MailService } from 'src/mail/mail.service';
 
 @Injectable()
 export class OrderDetailService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
 
   async createOrderDetail(createOrderDetailDto: CreateOrderDetailDto): Promise<any> {
     const orderDetail = await this.prismaService.orderDetail.create({
@@ -69,7 +73,20 @@ export class OrderDetailService {
         },
         order: {
           include: {
-            traveler: true,
+            traveler: {
+              select: {
+                avatarUrl: true,
+                name: true,
+                email: true,
+                phone: true,
+                username: true,
+                Order: {
+                  select: {
+                    OrderDetail: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -84,6 +101,7 @@ export class OrderDetailService {
       pricePerDay: formatDecimalToNumber(orderDetail.pricePerDay),
       deposits: formatDecimalToNumber(orderDetail.deposits),
       totalAmount: formatDecimalToNumber(orderDetail.totalAmount),
+      serviceFee: orderDetail.serviceFee ? formatDecimalToNumber(orderDetail.serviceFee) : 0,
       car: {
         ...orderDetail.car,
         pricePerDay: formatDecimalToNumber(orderDetail.car.pricePerDay),
@@ -93,6 +111,29 @@ export class OrderDetailService {
         images: orderDetail.car.CarImage.map((image) => image.url),
         CarImage: undefined,
         CarColor: undefined,
+      },
+      traveler: {
+        ...orderDetail.order.traveler,
+        successTrips: orderDetail.order.traveler.Order.map(
+          (order) =>
+            order.OrderDetail.filter((orderDetail) => orderDetail.orderDetailStatus === OrderDetailStatus.COMPLETED)
+              .length,
+        ).reduce((acc, cur) => acc + cur, 0),
+        cancelTrips: orderDetail.order.traveler.Order.map(
+          (order) =>
+            order.OrderDetail.filter((orderDetail) => orderDetail.orderDetailStatus === OrderDetailStatus.CANCELED)
+              .length,
+        ).reduce((acc, cur) => acc + cur, 0),
+        totalTrips: orderDetail.order.traveler.Order.map(
+          (order) =>
+            order.OrderDetail.filter(
+              (orderDetail) =>
+                orderDetail.orderDetailStatus === OrderDetailStatus.COMPLETED ||
+                orderDetail.orderDetailStatus === OrderDetailStatus.CANCELED,
+            ).length,
+        ).reduce((acc, cur) => acc + cur, 0),
+
+        Order: undefined,
       },
     };
   }
@@ -248,10 +289,45 @@ export class OrderDetailService {
         // carId: updateOrderDetailDto.carId,
       },
       data,
+      include: {
+        car: {
+          include: {
+            user: true,
+          },
+        },
+        order: {
+          include: {
+            OrderDetail: {
+              include: {
+                car: true,
+              },
+            },
+            traveler: true,
+          },
+        },
+      },
     });
 
     if (!orderDetail) {
       throw new NotFoundException(`Order Detail with id ${id} not found`);
+    }
+
+    const startDate = orderDetail.startDate.toISOString().split('T')[0];
+    const endDate = orderDetail.endDate.toISOString().split('T')[0];
+
+    if (orderDetail) {
+      await this.mailService.sendMail({
+        to: orderDetail.order.traveler.email,
+        from: process.env.MAIL_FROM,
+        subject: 'Xác nhận đơn đặt xe',
+        template: 'order-confirmation',
+        context: {
+          customerName: orderDetail.order.traveler.name,
+          order: orderDetail.order,
+          startDate: startDate,
+          endDate: endDate,
+        },
+      });
     }
 
     return {

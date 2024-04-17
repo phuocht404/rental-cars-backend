@@ -22,6 +22,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { RolesModule } from './roles/roles.module';
 import { StripeModule } from './stripe/stripe.module';
 import { UsersModule } from './users/users.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { UsersModule } from './users/users.module';
     CloudinaryModule,
     StripeModule,
     AnalyticsModule,
+    MailModule,
   ],
   controllers: [],
   providers: [

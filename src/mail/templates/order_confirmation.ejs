@@ -1,0 +1,33 @@
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Xác nhận đơn thuê xe</title>
+    <style></style>
+  </head>
+  <body>
+    <header>
+      <h2>Xác nhận đơn hàng</h2>
+    </header>
+    <section>
+      <p>Xin chào <%= customerName %>,</p>
+      <p>Đơn hàng của bạn đã được xác nhận.</p>
+      <h3>Chi tiết đơn hàng:</h3>
+      <ul>
+        <% order.OrderDetail.forEach(function(item) { %>
+        <li>
+          <%= item.car.name %> - Giá thuê: <%= item.totalAmount %> vnđ - Trạng thái: <% if (item.orderDetailStatus ===
+          "PENDING") { %> Chờ xác nhận <% } %> <% if (item.orderDetailStatus === "CONFIRMED") { %> Đã xác nhận <% } %>
+          <% if (item.orderDetailStatus === "CANCELED") { %> Đã hủy <% } %> <% if (item.orderDetailStatus ===
+          "RECEIVED") { %> Đã nhận xe <% } %> <% if (item.orderDetailStatus === "COMPLETED") { %> Đã trả xe <% } %>
+        </li>
+        <% }); %>
+      </ul>
+      <p>Tổng tiền: <%= order.totalAmount %> vnđ</p>
+      <p>Đã cọc:<%= order.deposits %> vnđ</p>
+    </section>
+    <footer>
+      <p>Cảm ơn bạn đã ủng hộ chúng tôi!</p>
+    </footer>
+  </body>
+</html>

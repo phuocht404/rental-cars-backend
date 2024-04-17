@@ -229,6 +229,11 @@ export class CarsService {
   }
 
   async updateCarById(id: number, updateCarDto: any): Promise<any> {
+    updateCarDto = {
+      ...updateCarDto,
+      features: undefined,
+    };
+
     const exitsCar = await this.prismaService.car.findFirst({
       where: {
         id,
@@ -515,7 +520,48 @@ export class CarsService {
     };
   }
 
-  async searchCars(page: number, limit: number, startDate: string, endDate: string): Promise<any> {
+  async searchCars(page: number, limit: number, startDate: string, endDate: string, filter: any): Promise<any> {
+    // check filter
+    const whereConditions: any = {
+      status: CarStatus.AVAILABLE,
+      OrderDetail: {
+        none: {
+          startDate: { lte: new Date(endDate) },
+          endDate: { gte: new Date(startDate) },
+        },
+      },
+    };
+
+    // Check if brandId is provided in the filter
+    if (filter.brandId) {
+      whereConditions.model = {
+        brand: {
+          id: Number(filter.brandId),
+        },
+      };
+    }
+
+    // Check if modelId is provided in the filter
+    if (filter.modelId) {
+      whereConditions.modelId = Number(filter.modelId);
+    }
+
+    // Check if seats range is provided in the filter
+    if (filter.seats && filter.seats.length === 2) {
+      whereConditions.seats = {
+        gte: Number(filter.seats[0]),
+        lte: Number(filter.seats[1]),
+      };
+    }
+
+    // Check if priceRange is provided in the filter
+    if (filter.priceRange && filter.priceRange.length === 2) {
+      whereConditions.pricePerDay = {
+        gte: filter.priceRange[0] * 1000,
+        lte: filter.priceRange[1] * 1000,
+      };
+    }
+
     const { _page, _limit } = getPagination(page, limit);
 
     // Calculate the total number of users
@@ -538,17 +584,10 @@ export class CarsService {
       skip: offset,
       take: _limit,
       where: {
-        status: CarStatus.AVAILABLE,
-        OrderDetail: {
-          none: {
-            startDate: { lte: new Date(endDate) },
-            endDate: { gte: new Date(startDate) },
-          },
-        },
+        ...whereConditions,
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      orderBy: [{ createdAt: 'desc' }, { pricePerDay: filter.sortPrice }],
+
       select: {
         id: true,
         name: true,
