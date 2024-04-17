@@ -16,10 +16,13 @@
       <ul>
         <% order.OrderDetail.forEach(function(item) { %>
         <li>
-          <%= item.car.name %> - Giá thuê: <%= item.totalAmount %> vnđ - Trạng thái: <% if (item.orderDetailStatus ===
-          "PENDING") { %> Chờ xác nhận <% } %> <% if (item.orderDetailStatus === "CONFIRMED") { %> Đã xác nhận <% } %>
-          <% if (item.orderDetailStatus === "CANCELED") { %> Đã hủy <% } %> <% if (item.orderDetailStatus ===
-          "RECEIVED") { %> Đã nhận xe <% } %> <% if (item.orderDetailStatus === "COMPLETED") { %> Đã trả xe <% } %>
+          <%= item.car.name %> - Giá thuê: <%= item.totalAmount %> vnđ - Trạng thái:
+          <strong>
+            <% if (item.orderDetailStatus === "PENDING") { %> Chờ xác nhận <% } %> <% if (item.orderDetailStatus ===
+            "CONFIRMED") { %> Đã xác nhận <% } %> <% if (item.orderDetailStatus === "CANCELED") { %> Đã hủy <% } %> <%
+            if (item.orderDetailStatus === "RECEIVED") { %> Đã nhận xe <% } %> <% if (item.orderDetailStatus ===
+            "COMPLETED") { %> Đã trả xe <% } %>
+          </strong>
         </li>
         <% }); %>
       </ul>

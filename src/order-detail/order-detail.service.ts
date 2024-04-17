@@ -308,6 +308,26 @@ export class OrderDetailService {
       },
     });
 
+    // if (updateOrderDetailDto.orderDetailStatus === 'CANCELED') {
+    //   await this.prismaService.orderDetail.update({
+    //     where: {
+    //       id,
+    //     },
+    //     data: {
+    //       deposits: 0,
+    //     },
+    //   });
+
+    //   await this.prismaService.order.update({
+    //     where: {
+    //       id: orderDetail.orderId,
+    //     },
+    //     data: {
+    //       deposits: 0,
+    //     },
+    //   });
+    // }
+
     if (!orderDetail) {
       throw new NotFoundException(`Order Detail with id ${id} not found`);
     }
