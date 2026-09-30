@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { OrderDetailStatus, OrderStatus, PaymentStatus } from '@prisma/client';
-import * as moment from 'moment';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { OrderDetailStatus, OrderStatus, PaymentStatus, RoleName } from '@prisma/client';
 import { OrderDetailService } from 'src/order-detail/order-detail.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { formatDecimalToNumber, getPagination } from 'utils/utils';
 
 import { UpdateOrderDto } from './dto';
+import { priceCartItems } from './order-pricing';
 
 @Injectable()
 export class OrdersService {
@@ -15,15 +15,11 @@ export class OrdersService {
   ) {}
 
   async createOrder(currentUser: any, createOrderDto: any): Promise<any> {
-    const { items } = createOrderDto;
+    // Giá và tiền cọc luôn được tính lại ở server, bỏ qua giá trị client gửi lên
+    const items = await priceCartItems(this.prismaService, createOrderDto?.items);
 
-    const totalAmount = await items.reduce((total: any, item: { totalAmount: any }) => {
-      return total + item?.totalAmount;
-    }, 0);
-
-    const deposits = await items.reduce((total: any, item: { deposits: any }) => {
-      return total + item?.deposits;
-    }, 0);
+    const totalAmount = items.reduce((total, item) => total + item.totalAmount, 0);
+    const deposits = items.reduce((total, item) => total + item.deposits, 0);
 
     const order = await this.prismaService.order.create({
       data: {
@@ -33,11 +29,11 @@ export class OrdersService {
         orderStatus: OrderStatus.PENDING,
         paymentStatus: PaymentStatus.DEPOSIT,
         OrderDetail: {
-          create: items.map((item: any) => ({
+          create: items.map((item) => ({
             carId: item.carId,
             pricePerDay: item.pricePerDay,
-            startDate: new Date(moment(item.startDate, 'DD/MM/YYYY').format('YYYY-MM-DD')),
-            endDate: new Date(moment(item.endDate, 'DD/MM/YYYY').format('YYYY-MM-DD')),
+            startDate: item.startDate,
+            endDate: item.endDate,
             deposits: item.deposits,
             totalAmount: item.totalAmount,
             orderDetailStatus: OrderDetailStatus.PENDING,
@@ -116,7 +112,7 @@ export class OrdersService {
     };
   }
 
-  async findOneById(id: number): Promise<any> {
+  async findOneById(id: number, currentUser: any): Promise<any> {
     const order = await this.prismaService.order.findUnique({
       where: {
         id,
@@ -153,6 +149,11 @@ export class OrdersService {
       throw new NotFoundException(`Order with id ${id} not found`);
     }
 
+    // Chỉ admin hoặc chính người đặt đơn mới được xem
+    if (currentUser?.role !== RoleName.ADMIN && order.travelerId !== currentUser?.id) {
+      throw new ForbiddenException('Bạn không có quyền xem đơn hàng này');
+    }
+
     return {
       ...order,
       totalAmount: formatDecimalToNumber(order.totalAmount),
@@ -181,7 +182,8 @@ export class OrdersService {
         id,
       },
       data: {
-        ...updateOrderDto,
+        orderStatus: updateOrderDto.orderStatus,
+        paymentStatus: updateOrderDto.paymentStatus,
       },
       select: {
         id: true,
@@ -224,9 +226,10 @@ export class OrdersService {
       throw new NotFoundException(`Order with id ${id} not found`);
     }
 
-    await this.prismaService.orderDetail.deleteMany({
+    // OrderDetail bị xoá theo (onDelete: Cascade)
+    await this.prismaService.order.delete({
       where: {
-        orderId: id,
+        id,
       },
     });
 

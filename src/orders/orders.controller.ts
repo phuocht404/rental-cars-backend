@@ -43,11 +43,7 @@ export class OrdersController {
   @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
   @Post()
   createOrder(@GetCurrentUser() currentUser: any, @Body() createOrderDto: any): Promise<any> {
-    try {
-      return this.ordersService.createOrder(currentUser, createOrderDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.ordersService.createOrder(currentUser, createOrderDto);
   }
 
   @ApiOperation({ summary: 'Get all orders' })
@@ -68,14 +64,10 @@ export class OrdersController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
+  @Roles(RoleName.ADMIN)
   @Get()
   findAllOrders(@Query('page') page: number, @Query('limit') limit: number): Promise<any> {
-    try {
-      return this.ordersService.findAllOrders(page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.ordersService.findAllOrders(page, limit);
   }
 
   @ApiOperation({ summary: 'Get order by id' })
@@ -98,12 +90,8 @@ export class OrdersController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
   @Get(':id')
-  findOneById(@Param('id') id: number): Promise<any> {
-    try {
-      return this.ordersService.findOneById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+  findOneById(@Param('id') id: number, @GetCurrentUser() currentUser: any): Promise<any> {
+    return this.ordersService.findOneById(+id, currentUser);
   }
 
   @ApiOperation({ summary: 'Update order by id' })
@@ -125,14 +113,10 @@ export class OrdersController {
   @ApiParam({ name: 'id', required: true, type: Number })
   @ApiBody({ type: UpdateOrderDto })
   @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
+  @Roles(RoleName.ADMIN)
   @Patch(':id')
   updateOrderById(@Param('id') id: number, @Body() updateOrderDto: UpdateOrderDto): Promise<any> {
-    try {
-      return this.ordersService.updateOrderById(+id, updateOrderDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.ordersService.updateOrderById(+id, updateOrderDto);
   }
 
   @ApiOperation({ summary: 'Remove order by id' })
@@ -153,14 +137,10 @@ export class OrdersController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @ApiParam({ name: 'id', required: true, type: Number })
   @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
+  @Roles(RoleName.ADMIN)
   @Delete(':id')
   removeById(@Param('id') id: number): Promise<any> {
-    try {
-      return this.ordersService.removeById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.ordersService.removeById(+id);
   }
 
   @ApiOperation({ summary: 'Get my orders' })
@@ -187,10 +167,6 @@ export class OrdersController {
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ): Promise<any> {
-    try {
-      return this.ordersService.getMyOrders(currentUser, page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.ordersService.getMyOrders(currentUser, page, limit);
   }
 }
