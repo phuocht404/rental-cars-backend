@@ -1,10 +1,10 @@
 import { Decimal } from '@prisma/client/runtime/library';
 
-import { DEFAULT_LIMIT, DEFAULT_PAGE } from './constants';
+import { DEFAULT_LIMIT, DEFAULT_PAGE, MAX_LIMIT } from './constants';
 
 export const getPagination = (page: number, limit: number) => {
   const _page = Number(page) > 0 ? Number(page) : DEFAULT_PAGE;
-  const _limit = Number(limit) > 0 ? Number(limit) : DEFAULT_LIMIT;
+  const _limit = Number(limit) > 0 ? Math.min(Number(limit), MAX_LIMIT) : DEFAULT_LIMIT;
 
   return { _page, _limit };
 };

@@ -92,6 +92,9 @@ model Car {
   user              User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId            Int?          @map("ma_nguoi_dung")
 
+  @@index([status])
+  @@index([modelId])
+  @@index([userId])
   @@map("xe")
 }
 
@@ -150,6 +153,7 @@ model Order {
   updatedAt     DateTime       @updatedAt @map("ngay_cap_nhat")
   OrderDetail   OrderDetail[]
 
+  @@index([travelerId])
   @@map("don_hang")
 }
 
@@ -172,6 +176,8 @@ model OrderDetail {
   updatedAt         DateTime          @updatedAt @map("ngay_cap_nhat")
   review            Review?
 
+  @@index([carId, startDate, endDate])
+  @@index([orderDetailStatus])
   @@map("chi_tiet_don_hang")
 }
 

@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { CarStatus, Fuel, Transmission } from '@prisma/client';
+import { CarStatus, Fuel, RoleName, Transmission } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { formatDecimalToNumber, generateSlug, getPagination } from 'utils/utils';
 
@@ -18,7 +18,7 @@ export class CarsService {
       'https://res.cloudinary.com/dj1v6wmjv/image/upload/v1706403530/rental-cars-cloudinary/cars/UseCaseDiagram_oq8byi.jpg',
     ];
 
-    if (createCarDto.images.length < 0) {
+    if (!createCarDto.images?.length) {
       createCarDto.images = imgArrs;
     }
 
@@ -35,9 +35,11 @@ export class CarsService {
         id: Number(createCarDto.modelId),
       },
     });
+    if (!model) throw new BadRequestException('Mẫu xe không tồn tại');
+
     const name = model.name + ' ' + createCarDto.yearOfManufacture;
 
-    const slug = generateSlug(createCarDto);
+    const slug = generateSlug(name);
 
     const newCar = await this.prismaService.car.create({
       data: {
@@ -65,7 +67,7 @@ export class CarsService {
     if (!newCar) throw new BadRequestException('Tạo xe không thành công');
 
     await this.prismaService.carFeature.createMany({
-      data: createCarDto.features.map((feature: any) => ({
+      data: (createCarDto.features ?? []).map((feature: any) => ({
         carId: newCar.id,
         featureId: feature,
       })),
@@ -249,7 +251,7 @@ export class CarsService {
     };
   }
 
-  async updateCarById(id: number, updateCarDto: any): Promise<any> {
+  async updateCarById(id: number, updateCarDto: any, currentUser: any): Promise<any> {
     updateCarDto = {
       ...updateCarDto,
       features: undefined,
@@ -265,7 +267,11 @@ export class CarsService {
       throw new NotFoundException(`Car with id ${id} not found`);
     }
 
-    const slug = generateSlug(updateCarDto.name);
+    this.assertCanManage(exitsCar, currentUser);
+
+    // Giữ nguyên slug khi tên không đổi để không làm hỏng các đường dẫn cũ
+    const slug =
+      updateCarDto.name && updateCarDto.name !== exitsCar.name ? generateSlug(updateCarDto.name) : exitsCar.slug;
 
     const car = await this.prismaService.car.update({
       where: {
@@ -336,16 +342,31 @@ export class CarsService {
     };
   }
 
-  async removeById(id: number): Promise<any> {
-    const car = await this.prismaService.car.delete({
+  private assertCanManage(car: { userId: number | null }, currentUser: any) {
+    if (currentUser?.role !== RoleName.ADMIN && car.userId !== currentUser?.id) {
+      throw new ForbiddenException('Bạn không có quyền thao tác trên xe này');
+    }
+  }
+
+  async removeById(id: number, currentUser: any): Promise<any> {
+    const car = await this.prismaService.car.findUnique({
       where: {
         id,
       },
+      select: { id: true, userId: true },
     });
 
     if (!car) {
       throw new NotFoundException(`Car with id ${id} not found`);
     }
+
+    this.assertCanManage(car, currentUser);
+
+    await this.prismaService.car.delete({
+      where: {
+        id,
+      },
+    });
 
     return `Delete a car by id: ${id} successfully.`;
   }
@@ -408,7 +429,7 @@ export class CarsService {
       ...car,
       pricePerDay: formatDecimalToNumber(car.pricePerDay),
       images: car.CarImage.map((image) => image.url),
-      thumbnail: car.CarImage[0].url,
+      thumbnail: car.CarImage[0]?.url,
       trips: car.OrderDetail.length,
       rating:
         car.OrderDetail.length > 0
@@ -585,18 +606,9 @@ export class CarsService {
 
     const { _page, _limit } = getPagination(page, limit);
 
-    // Calculate the total number of users
+    // Đếm theo đúng điều kiện lọc đang dùng để tìm kiếm
     const totalCars = await this.prismaService.car.count({
-      where: {
-        status: CarStatus.AVAILABLE,
-
-        OrderDetail: {
-          none: {
-            startDate: { lte: new Date(endDate) },
-            endDate: { gte: new Date(startDate) },
-          },
-        },
-      },
+      where: whereConditions,
     });
     const totalPages = Math.ceil(totalCars / _limit);
     const offset = (_page - 1) * _limit;
@@ -607,7 +619,10 @@ export class CarsService {
       where: {
         ...whereConditions,
       },
-      orderBy: [{ createdAt: 'desc' }, { pricePerDay: filter.sortPrice }],
+      orderBy:
+        filter.sortPrice === 'asc' || filter.sortPrice === 'desc'
+          ? [{ pricePerDay: filter.sortPrice }, { createdAt: 'desc' }]
+          : [{ createdAt: 'desc' }],
 
       select: {
         id: true,
@@ -650,7 +665,7 @@ export class CarsService {
       data: cars.map((car) => ({
         ...car,
         pricePerDay: formatDecimalToNumber(car.pricePerDay),
-        thumbnail: car.CarImage[0].url,
+        thumbnail: car.CarImage[0]?.url,
         trips: car.OrderDetail.length,
         rating:
           car.OrderDetail.length > 0
@@ -740,6 +755,10 @@ export class CarsService {
   }
 
   async updateCarStatus(id: number, body: any): Promise<any> {
+    if (!Object.values(CarStatus).includes(body?.status)) {
+      throw new BadRequestException('Trạng thái xe không hợp lệ');
+    }
+
     const exitsCar = await this.prismaService.car.findFirst({
       where: {
         id,
@@ -755,7 +774,7 @@ export class CarsService {
         id,
       },
       data: {
-        status: body.status,
+        status: body.status as CarStatus,
       },
     });
 

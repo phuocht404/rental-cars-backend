@@ -2,6 +2,7 @@ import { ClassSerializerInterceptor, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { MulterModule } from '@nestjs/platform-express';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { JwtAuthGuard } from 'src/auth/guards';
 
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -27,6 +28,8 @@ import { MailModule } from './mail/mail.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env.local'] }),
+    // 120 request / phút / IP cho toàn bộ API
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     MulterModule.register({
       dest: './upload',
     }),
@@ -51,6 +54,10 @@ import { MailModule } from './mail/mail.module';
   ],
   controllers: [],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,

@@ -26,7 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { RoleName } from '@prisma/client';
 import { MetaSchema } from 'schemas';
-import { GetCurrentUser, Public, Roles } from 'src/auth/decorators';
+import { GetCurrentUser, Roles } from 'src/auth/decorators';
 import { RolesGuard } from 'src/auth/guards';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { UploadAvatarDto } from 'src/users/dto/upload-avatar.dto';
@@ -101,7 +101,8 @@ export class UsersController {
   @ApiResponse({ status: 500, description: 'Internal server error' })
   @ApiParam({ name: 'id', required: true, type: Number })
   @Get(':id')
-  @Public()
+  @Roles(RoleName.ADMIN, RoleName.TRAVELER, RoleName.CAROWNER)
+  @UseGuards(RolesGuard)
   getUserById(@Param('id') id: number): Promise<UserDto> {
     try {
       return this.usersService.getUserById(id);
@@ -208,8 +209,12 @@ export class UsersController {
   @Patch(':id')
   @Roles(RoleName.ADMIN, RoleName.TRAVELER, RoleName.CAROWNER)
   @UseGuards(RolesGuard)
-  updateUser(@Param('id') id: number, @Body() updateUserDto: UpdateUserDto): Promise<UserDto> {
-    return this.usersService.updateUser(id, updateUserDto);
+  updateUser(
+    @Param('id') id: number,
+    @Body() updateUserDto: UpdateUserDto,
+    @GetCurrentUser() currentUser: any,
+  ): Promise<UserDto> {
+    return this.usersService.updateUser(id, updateUserDto, currentUser);
   }
 
   //  delete user by id

@@ -41,6 +41,7 @@ export class OrderDetailController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @ApiBody({ type: CreateOrderDetailDto })
   @UseGuards(RolesGuard)
+  @Roles(RoleName.ADMIN)
   @Post()
   createOrderDetail(@Body() createOrderDetailDto: CreateOrderDetailDto): Promise<any> {
     return this.orderDetailService.createOrderDetail(createOrderDetailDto);
@@ -82,7 +83,7 @@ export class OrderDetailController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.TRAVELER, RoleName.CAROWNER)
+  @Roles(RoleName.ADMIN)
   @Get()
   findAllOrderDetail(@Query('page') page: number, @Query('limit') limit: number): Promise<any> {
     return this.orderDetailService.findAllOrderDetail(page, limit);
@@ -108,8 +109,8 @@ export class OrderDetailController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.TRAVELER, RoleName.CAROWNER)
   @Get(':id')
-  findOneById(@Param('id') id: number): Promise<any> {
-    return this.orderDetailService.findOneById(+id);
+  findOneById(@Param('id') id: number, @GetCurrentUser() currentUser: any): Promise<any> {
+    return this.orderDetailService.findOneById(+id, currentUser);
   }
 
   @ApiOperation({ summary: 'Update a orderDetail by id' })
@@ -131,7 +132,7 @@ export class OrderDetailController {
   @ApiParam({ name: 'id', required: true, type: Number })
   @ApiBody({ type: UpdateOrderDetailDto })
   @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.TRAVELER, RoleName.CAROWNER)
+  @Roles(RoleName.ADMIN)
   @Patch(':id')
   updateById(@Param('id') id: number, @Body() updateOrderDetailDto: UpdateOrderDetailDto): Promise<any> {
     return this.orderDetailService.updateById(+id, updateOrderDetailDto);
@@ -155,16 +156,17 @@ export class OrderDetailController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @ApiParam({ name: 'id', required: true, type: Number })
   @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.TRAVELER, RoleName.CAROWNER)
+  @Roles(RoleName.ADMIN)
   @Delete(':id')
   removeById(@Param('id') id: number): Promise<any> {
     return this.orderDetailService.removeById(+id);
   }
 
-  @Public()
+  @UseGuards(RolesGuard)
+  @Roles(RoleName.ADMIN, RoleName.TRAVELER, RoleName.CAROWNER)
   @Get('order/:orderId')
-  getAllByOrderId(orderId: number): Promise<any> {
-    return this.orderDetailService.getAllByOrderId(orderId);
+  getAllByOrderId(@Param('orderId') orderId: number, @GetCurrentUser() currentUser: any): Promise<any> {
+    return this.orderDetailService.getAllByOrderId(orderId, currentUser);
   }
 
   @UseGuards(RolesGuard)
@@ -179,15 +181,23 @@ export class OrderDetailController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
   @Patch('/update/status/:id')
-  updateOrderDetailStatusById(@Param('id') id: number, @Body() updateOrderDetailDto: any): Promise<any> {
-    return this.orderDetailService.updateOrderDetailStatusById(+id, updateOrderDetailDto);
+  updateOrderDetailStatusById(
+    @Param('id') id: number,
+    @Body() updateOrderDetailDto: any,
+    @GetCurrentUser() currentUser: any,
+  ): Promise<any> {
+    return this.orderDetailService.updateOrderDetailStatusById(+id, updateOrderDetailDto, currentUser);
   }
 
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.CAROWNER)
   @Patch('/update/payment-status/:id')
-  updatePaymentStatusById(@Param('id') id: number, @Body() body: any): Promise<any> {
-    return this.orderDetailService.updatePaymentStatusById(+id, body);
+  updatePaymentStatusById(
+    @Param('id') id: number,
+    @Body() body: any,
+    @GetCurrentUser() currentUser: any,
+  ): Promise<any> {
+    return this.orderDetailService.updatePaymentStatusById(+id, body, currentUser);
   }
 
   @Public()

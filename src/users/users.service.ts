@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
@@ -67,6 +67,27 @@ export class UsersService {
     };
   }
 
+  // Bản nhẹ dùng cho mỗi request đã xác thực (JwtStrategy), không join Order/OrderDetail
+  async getAuthUser(id: number): Promise<any> {
+    const user = await this.prismaService.user.findUnique({
+      where: { id: Number(id) },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        email: true,
+        phone: true,
+        avatarUrl: true,
+        status: true,
+        role: { select: { name: true } },
+      },
+    });
+
+    if (!user) return null;
+
+    return { ...user, role: user.role?.name };
+  }
+
   async getUserById(id: number): Promise<any> {
     const user = await this.prismaService.user.findFirst({
       where: {
@@ -103,6 +124,8 @@ export class UsersService {
         updatedAt: true,
       },
     });
+
+    if (!user) throw new NotFoundException(`User with id ${id} not found`);
 
     // calculate success rate
     const totalTrips = user.Order.length;
@@ -157,7 +180,7 @@ export class UsersService {
   }
 
   async getProfile(currentUser: any): Promise<any> {
-    return currentUser;
+    return this.getUserById(currentUser.id);
   }
 
   async createUser(data: any): Promise<any> {
@@ -220,19 +243,11 @@ export class UsersService {
     return { ...user, role: user.role.name };
   }
 
-  async updateUser(id: number, data: any): Promise<any> {
-    const roleId = await this.prismaService.role.findFirst({
-      where: {
-        name: (data.role as RoleName) || RoleName.TRAVELER,
-      },
-      select: {
-        id: true,
-      },
-    });
+  async updateUser(id: number, body: any, currentUser: any): Promise<any> {
+    const isAdmin = currentUser?.role === RoleName.ADMIN;
 
-    // hash password
-    if (data.password) {
-      data.password = await bcrypt.hash(data.password, 10);
+    if (!isAdmin && Number(id) !== currentUser?.id) {
+      throw new ForbiddenException('Bạn chỉ được cập nhật thông tin của chính mình');
     }
 
     const existUser = await this.prismaService.user.findUnique({
@@ -244,25 +259,45 @@ export class UsersService {
       },
     });
 
-    if (data.avatarUrl !== existUser.avatarUrl) {
-      const avatarFile = convertBase64ToFile(data.avatarUrl);
+    if (!existUser) throw new NotFoundException(`User with id ${id} not found`);
 
-      const nameImage = `${data.username}-${Date.now()}-avatar`;
-      const avatar = await this.cloudinaryService.uploadAvatar(avatarFile, nameImage);
-
-      data.avatarUrl = avatar.url;
+    // Chỉ cho phép các trường hồ sơ; vai trò, trạng thái, mật khẩu... chỉ admin mới được đổi
+    const data: any = {};
+    for (const key of ['name', 'email', 'phone', 'gender', 'dateOfBirth', 'address']) {
+      if (body[key] !== undefined) data[key] = body[key];
     }
 
-    delete data.role;
+    if (isAdmin) {
+      if (body.username !== undefined) data.username = body.username;
+      if (body.status !== undefined) data.status = body.status;
+      if (body.password) data.password = await bcrypt.hash(body.password, 10);
+
+      if (body.role) {
+        const role = await this.prismaService.role.findFirst({
+          where: { name: body.role as RoleName },
+          select: { id: true },
+        });
+
+        if (!role) throw new BadRequestException('Vai trò không hợp lệ');
+
+        data.roleId = role.id;
+      }
+    }
+
+    // Chỉ upload khi client gửi ảnh mới dạng base64
+    if (typeof body.avatarUrl === 'string' && body.avatarUrl.startsWith('data:')) {
+      const avatarFile = convertBase64ToFile(body.avatarUrl);
+      const nameImage = `${body.username ?? id}-${Date.now()}-avatar`;
+      const avatar = await this.cloudinaryService.uploadAvatar(avatarFile, nameImage);
+
+      data.avatarUrl = avatar.secure_url ?? avatar.url;
+    }
 
     const user = await this.prismaService.user.update({
       where: {
         id: Number(id),
       },
-      data: {
-        ...data,
-        roleId: Number(roleId.id),
-      },
+      data,
       select: {
         id: true,
         name: true,
@@ -474,6 +509,9 @@ export class UsersService {
     const { currentPassword, newPassword, confirmNewPassword } = body;
 
     if (newPassword !== confirmNewPassword) throw new BadRequestException('Mật khẩu mới không khớp');
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      throw new BadRequestException('Mật khẩu mới phải có ít nhất 6 ký tự');
+    }
 
     const userOld = await this.prismaService.user.findUnique({
       where: {
@@ -488,7 +526,7 @@ export class UsersService {
 
     if (!isMatch) throw new BadRequestException('Mật khẩu hiện tại không đúng');
 
-    const hashedPassword = await bcrypt.hash(currentPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     const user = await this.prismaService.user.update({
       where: {
@@ -497,6 +535,7 @@ export class UsersService {
       data: {
         password: hashedPassword,
       },
+      select: { id: true, username: true },
     });
 
     return user;

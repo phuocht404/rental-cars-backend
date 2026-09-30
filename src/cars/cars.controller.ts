@@ -137,12 +137,12 @@ export class CarsController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.CAROWNER)
   @Patch(':id')
-  updateCarById(@Param('id') id: number, @Body() updateCarDto: UpdateCarDto): Promise<any> {
-    try {
-      return this.carsService.updateCarById(+id, updateCarDto);
-    } catch (e) {
-      throw new Error(e);
-    }
+  updateCarById(
+    @Param('id') id: number,
+    @Body() updateCarDto: UpdateCarDto,
+    @GetCurrentUser() currentUser: any,
+  ): Promise<any> {
+    return this.carsService.updateCarById(+id, updateCarDto, currentUser);
   }
 
   @ApiOperation({ summary: 'Delete a car by id' })
@@ -160,12 +160,8 @@ export class CarsController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.CAROWNER)
   @Delete(':id')
-  removeById(@Param('id') id: number): Promise<any> {
-    try {
-      return this.carsService.removeById(+id);
-    } catch (e) {
-      throw new Error(e);
-    }
+  removeById(@Param('id') id: number, @GetCurrentUser() currentUser: any): Promise<any> {
+    return this.carsService.removeById(+id, currentUser);
   }
 
   @Public()
@@ -230,7 +226,7 @@ export class CarsController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.CAROWNER)
+  @Roles(RoleName.ADMIN)
   @Patch('/status/:id')
   updateCarStatus(@Param('id') id: number, @Body() body: any): Promise<any> {
     try {
