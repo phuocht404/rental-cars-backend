@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { getPagination } from 'utils/utils';
 
@@ -19,7 +19,7 @@ export class CarModelsService {
     });
 
     if (exitsCarModel) {
-      throw new Error('Car model already exists');
+      throw new ConflictException('Car model already exists');
     }
 
     const carModel = await this.prismaService.carModel.create({

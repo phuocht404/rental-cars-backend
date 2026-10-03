@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -10,7 +10,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { RoleName } from '@prisma/client';
-import { GetCurrentUser, Roles } from 'src/auth/decorators';
+import { GetCurrentUser, Public, Roles } from 'src/auth/decorators';
 import { RolesGuard } from 'src/auth/guards';
 
 import { CreateReviewDto, ReviewDto, UpdateReviewDto } from './dto';
@@ -38,11 +38,7 @@ export class ReviewsController {
   @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
   @Post()
   createReview(@GetCurrentUser() currentUser: any, @Body() createReviewDto: CreateReviewDto): Promise<any> {
-    try {
-      return this.reviewsService.createReview(currentUser, createReviewDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.reviewsService.createReview(currentUser, createReviewDto);
   }
 
   @ApiOperation({ summary: 'Get all reviews' })
@@ -62,11 +58,7 @@ export class ReviewsController {
   @Roles(RoleName.ADMIN)
   @Get()
   findAllReview(@Query('page') page: number, @Query('limit') limit: number): Promise<any> {
-    try {
-      return this.reviewsService.findAllReview(page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.reviewsService.findAllReview(page, limit);
   }
 
   @ApiOperation({ summary: 'Get a review by id' })
@@ -86,11 +78,7 @@ export class ReviewsController {
   @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
   @Get(':id')
   findOneById(@Param('id') id: number): Promise<any> {
-    try {
-      return this.reviewsService.findOneById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.reviewsService.findOneById(+id);
   }
 
   @ApiOperation({ summary: 'Get all reviews by car id' })
@@ -106,15 +94,10 @@ export class ReviewsController {
   @ApiResponse({ status: 404, description: 'Review not found.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @ApiParam({ name: 'id', required: true, type: Number })
-  @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
+  @Public()
   @Get('car/:id')
-  findAllByCarId(@Param('id') id: number): Promise<any> {
-    try {
-      return this.reviewsService.findAllByCarId(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+  findAllByCarId(@Param('id', ParseIntPipe) id: number): Promise<any> {
+    return this.reviewsService.findAllByCarId(id);
   }
 
   @ApiOperation({ summary: 'Update a review by id' })
@@ -134,12 +117,12 @@ export class ReviewsController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
   @Patch(':id')
-  updateById(@Param('id') id: number, @Body() updateReviewDto: UpdateReviewDto): Promise<any> {
-    try {
-      return this.reviewsService.updateById(+id, updateReviewDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+  updateById(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateReviewDto: UpdateReviewDto,
+    @GetCurrentUser() currentUser: any,
+  ): Promise<any> {
+    return this.reviewsService.updateById(id, updateReviewDto, currentUser);
   }
 
   @ApiOperation({ summary: 'Delete a review by id' })
@@ -159,10 +142,6 @@ export class ReviewsController {
   @Roles(RoleName.ADMIN)
   @Delete(':id')
   removeById(@Param('id') id: number): Promise<any> {
-    try {
-      return this.reviewsService.removeById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.reviewsService.removeById(+id);
   }
 }

@@ -5,6 +5,7 @@ import { formatDateToDMY, formatDecimalToNumber, getPagination } from 'utils/uti
 
 import { CreateOrderDetailDto } from './dto/create-order-detail.dto';
 import { UpdateOrderDetailDto } from './dto/update-order-detail.dto';
+import { UpdateOrderDetailStatusDto, UpdatePaymentStatusDto } from './dto/update-order-detail-status.dto';
 import { MailService } from 'src/mail/mail.service';
 
 const PUBLIC_USER_SELECT = {
@@ -130,9 +131,9 @@ export class OrderDetailService {
       car: {
         ...orderDetail.car,
         pricePerDay: formatDecimalToNumber(orderDetail.car.pricePerDay),
-        model: orderDetail.car.model.name,
-        brand: orderDetail.car.model.brand.name,
-        color: orderDetail.car.CarColor.name,
+        model: orderDetail.car.model?.name,
+        brand: orderDetail.car.model?.brand?.name,
+        color: orderDetail.car.CarColor?.name ?? null,
         images: orderDetail.car.CarImage.map((image) => image.url),
         CarImage: undefined,
         CarColor: undefined,
@@ -239,58 +240,26 @@ export class OrderDetailService {
   }
 
   async getAllByUserId(userId: number): Promise<any> {
+    // Việc tự huỷ chuyến quá hạn do MaintenanceService (cron) đảm nhiệm, request GET không ghi dữ liệu
+    const ownerCars = { car: { userId } };
+
     const orderDetails = await this.prismaService.orderDetail.findMany({
       where: {
-        car: {
-          user: {
-            id: userId,
-          },
-        },
+        ...ownerCars,
+        // Đơn chưa thanh toán tiền cọc không hiển thị cho chủ xe
+        paymentStatus: { not: PaymentStatus.PENDING },
       },
       orderBy: {
         createdAt: 'desc',
       },
     });
 
-    if (!orderDetails) {
-      throw new NotFoundException(`Order with id ${userId} not found`);
-    }
-
-    const today = new Date();
-    const todayString = today.toISOString().split('T')[0];
-    const todayNumber = Number(todayString.replace(/-/g, ''));
-
-    const updateOrderDetails = orderDetails.map(async (orderDetail) => {
-      const { startDate, orderDetailStatus } = orderDetail;
-      const startDateString = startDate.toISOString().split('T')[0];
-      const startDateNumber = Number(startDateString.replace(/-/g, ''));
-
-      if (startDateNumber <= todayNumber && orderDetailStatus === OrderDetailStatus.PENDING) {
-        const update = await this.prismaService.orderDetail.update({
-          where: {
-            id: orderDetail.id,
-          },
-          data: {
-            orderDetailStatus: OrderDetailStatus.CANCELED,
-            paymentStatus: PaymentStatus.REFUND,
-            note: 'Tự động hủy đơn do quá hạn',
-          },
-        });
-
-        return update;
-      }
-
-      return orderDetail;
-    });
-
-    return Promise.all(updateOrderDetails).then((orderDetail) =>
-      orderDetail.map((orderDetail) => ({
-        ...orderDetail,
-        pricePerDay: formatDecimalToNumber(orderDetail.pricePerDay),
-        deposits: formatDecimalToNumber(orderDetail.deposits),
-        totalAmount: formatDecimalToNumber(orderDetail.totalAmount),
-      })),
-    );
+    return orderDetails.map((orderDetail) => ({
+      ...orderDetail,
+      pricePerDay: formatDecimalToNumber(orderDetail.pricePerDay),
+      deposits: orderDetail.deposits ? formatDecimalToNumber(orderDetail.deposits) : 0,
+      totalAmount: formatDecimalToNumber(orderDetail.totalAmount),
+    }));
   }
 
   private assertParticipant(currentUser: any, carOwnerId?: number | null, travelerId?: number | null) {
@@ -305,12 +274,8 @@ export class OrderDetailService {
     return { isAdmin, isOwner, isTraveler };
   }
 
-  async updateOrderDetailStatusById(id: number, body: any, currentUser: any): Promise<any> {
-    const target = body?.orderDetailStatus as OrderDetailStatus;
-
-    if (!Object.values(OrderDetailStatus).includes(target)) {
-      throw new BadRequestException('Trạng thái không hợp lệ');
-    }
+  async updateOrderDetailStatusById(id: number, body: UpdateOrderDetailStatusDto, currentUser: any): Promise<any> {
+    const target = body.orderDetailStatus;
 
     const current = await this.prismaService.orderDetail.findUnique({
       where: { id },
@@ -321,6 +286,7 @@ export class OrderDetailService {
         endDate: true,
         totalAmount: true,
         orderDetailStatus: true,
+        paymentStatus: true,
         car: { select: { userId: true } },
         order: { select: { travelerId: true } },
       },
@@ -344,6 +310,11 @@ export class OrderDetailService {
       throw new ForbiddenException(`Không thể chuyển trạng thái từ ${current.orderDetailStatus} sang ${target}`);
     }
 
+    // Chủ xe chỉ được xác nhận chuyến khi khách đã đặt cọc thành công
+    if (target === OrderDetailStatus.CONFIRMED && current.paymentStatus === PaymentStatus.PENDING) {
+      throw new BadRequestException('Chuyến đi chưa được thanh toán tiền cọc');
+    }
+
     // Các giá trị tiền, trạng thái thanh toán và trạng thái xe luôn do server quyết định
     const data: any = { orderDetailStatus: target };
     let carStatus: CarStatus | undefined;
@@ -365,9 +336,10 @@ export class OrderDetailService {
       data.paymentStatus = PaymentStatus.PAID;
       data.serviceFee = Number(current.totalAmount) * 0.5;
     } else if (target === OrderDetailStatus.CANCELED) {
-      data.paymentStatus = PaymentStatus.REFUND;
+      // Chưa thanh toán thì không có gì để hoàn
+      if (current.paymentStatus !== PaymentStatus.PENDING) data.paymentStatus = PaymentStatus.REFUND;
 
-      if (typeof body.note === 'string') data.note = body.note.slice(0, 500);
+      if (body.note) data.note = body.note;
     } else if (target === OrderDetailStatus.RECEIVED) {
       carStatus = CarStatus.RENTING;
     } else if (target === OrderDetailStatus.COMPLETED) {
@@ -410,7 +382,7 @@ export class OrderDetailService {
         to: orderDetail.order.traveler.email,
         from: process.env.MAIL_FROM,
         subject: 'Xác nhận đơn đặt xe',
-        template: 'order-confirmation',
+        template: 'order_confirmation',
         context: {
           customerName: orderDetail.order.traveler.name,
           order: orderDetail.order,
@@ -430,12 +402,8 @@ export class OrderDetailService {
     };
   }
 
-  async updatePaymentStatusById(id: number, body: any, currentUser: any): Promise<any> {
-    const paymentStatus = body?.paymentStatus as PaymentStatus;
-
-    if (!Object.values(PaymentStatus).includes(paymentStatus)) {
-      throw new BadRequestException('Trạng thái thanh toán không hợp lệ');
-    }
+  async updatePaymentStatusById(id: number, body: UpdatePaymentStatusDto, currentUser: any): Promise<any> {
+    const { paymentStatus } = body;
 
     const current = await this.prismaService.orderDetail.findUnique({
       where: { id },
@@ -460,29 +428,15 @@ export class OrderDetailService {
     const orderDetails = await this.prismaService.orderDetail.findMany({
       where: {
         carId: Number(carId),
-        AND: {
-          OR: [
-            {
-              orderDetailStatus: OrderDetailStatus.CONFIRMED,
-            },
-            {
-              orderDetailStatus: OrderDetailStatus.RECEIVED,
-            },
-            {
-              orderDetailStatus: OrderDetailStatus.COMPLETED,
-            },
-          ],
-        },
+        orderDetailStatus: { in: [OrderDetailStatus.CONFIRMED, OrderDetailStatus.RECEIVED] },
+        // Chỉ cần các chuyến chưa kết thúc để khoá ngày trên lịch
+        endDate: { gte: new Date(new Date().toISOString().split('T')[0]) },
       },
       select: {
         startDate: true,
         endDate: true,
       },
     });
-
-    if (!orderDetails) {
-      throw new NotFoundException(`Order Detail with car id ${carId} not found`);
-    }
 
     return orderDetails;
   }

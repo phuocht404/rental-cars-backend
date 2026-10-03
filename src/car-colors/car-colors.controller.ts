@@ -47,11 +47,7 @@ export class CarColorsController {
   @Roles(RoleName.ADMIN)
   @Post()
   createCarColor(@Body() createCarColorDto: CreateCarColorDto): Promise<CarColorsDto> {
-    try {
-      return this.carColorsService.createCarColor(createCarColorDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carColorsService.createCarColor(createCarColorDto);
   }
 
   @ApiOperation({ summary: 'Get all car colors' })
@@ -103,11 +99,7 @@ export class CarColorsController {
   @Public()
   @Get()
   findAllColor(@Query('page') page: number, @Query('limit') limit: number): Promise<any> {
-    try {
-      return this.carColorsService.findAllColor(page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carColorsService.findAllColor(page, limit);
   }
 
   @ApiOperation({ summary: 'Get a car color by id' })
@@ -132,11 +124,7 @@ export class CarColorsController {
   @Public()
   @Get(':id')
   findOneById(@Param('id') id: number): Promise<CarColorsDto> {
-    try {
-      return this.carColorsService.findOneById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carColorsService.findOneById(+id);
   }
 
   @ApiOperation({ summary: 'Update a car color by id' })
@@ -165,11 +153,7 @@ export class CarColorsController {
   @Roles(RoleName.ADMIN)
   @Patch(':id')
   updateColor(@Param('id') id: number, @Body() updateCarColorDto: UpdateCarColorDto): Promise<CarColorsDto> {
-    try {
-      return this.carColorsService.updateColor(+id, updateCarColorDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carColorsService.updateColor(+id, updateCarColorDto);
   }
 
   @ApiOperation({ summary: 'Delete a car color by id' })
@@ -193,10 +177,6 @@ export class CarColorsController {
   @Roles(RoleName.ADMIN)
   @Delete(':id')
   removeColor(@Param('id') id: number): Promise<string> {
-    try {
-      return this.carColorsService.removeColor(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carColorsService.removeColor(+id);
   }
 }

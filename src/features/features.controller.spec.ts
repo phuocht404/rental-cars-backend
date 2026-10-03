@@ -10,7 +10,10 @@ describe('FeaturesController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [FeaturesController],
       providers: [FeaturesService],
-    }).compile();
+    })
+      // Tự tạo mock rỗng cho các dependency (PrismaService, CloudinaryService...)
+      .useMocker(() => ({}))
+      .compile();
 
     controller = module.get<FeaturesController>(FeaturesController);
   });

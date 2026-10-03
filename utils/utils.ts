@@ -12,34 +12,22 @@ export const getPagination = (page: number, limit: number) => {
 export const generateSlug = (name: string): string => {
   const ran = Math.floor(Math.random() * 1000000).toString();
 
-  return `${name
+  // "Xe Hơi Đẹp" -> "xe-hoi-dep" (trước đây ký tự có dấu bị xoá mất: "xe-hi-p")
+  const base = name
     .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
     .toLowerCase()
-    .replace(/ /g, '-')
-    .replace(/[^\w-]+/g, '')}-${ran}`;
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return `${base || 'xe'}-${ran}`;
 };
 
 export const formatDecimalToNumber = (value: Decimal): number => {
   return Number(value.toFixed(2));
-};
-
-export const convertBase64ToFile = (base64String: string): Express.Multer.File => {
-  const matches = base64String.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-  const file: any = {};
-
-  if (matches?.length !== 3) {
-    throw new Error('Invalid input string');
-  }
-
-  file.fieldname = 'file';
-  file.originalname = 'file';
-  file.encoding = '7bit';
-  file.mimetype = matches[1];
-  file.type = matches[1];
-  file.buffer = Buffer.from(matches[2], 'base64');
-  file.size = Buffer.byteLength(matches[2], 'base64');
-
-  return file;
 };
 
 export const calculatePercentageChange = (previousValue: number, currentValue: number): number | null => {
@@ -56,4 +44,20 @@ export const formatDateToDMY = (date: Date) => {
     month: '2-digit',
     year: 'numeric',
   });
+};
+
+/** "ACTIVE,INACTIVE" hoặc ["ACTIVE"] -> danh sách giá trị hợp lệ của enum (bỏ giá trị lạ) */
+export const parseEnumList = <T extends string>(value: unknown, allowed: Record<string, T>): T[] | undefined => {
+  if (value === undefined || value === null || value === '') return undefined;
+
+  const raw = (Array.isArray(value) ? value : String(value).split(',')).map((item) => String(item).trim());
+  const valid = raw.filter((item): item is T => (Object.values(allowed) as string[]).includes(item));
+
+  return valid.length > 0 ? valid : undefined;
+};
+
+/** Chuỗi tìm kiếm đã cắt khoảng trắng và giới hạn độ dài */
+export const normalizeSearch = (value: unknown): string | undefined => {
+  const text = typeof value === 'string' ? value.trim().slice(0, 100) : '';
+  return text || undefined;
 };

@@ -1,191 +1,94 @@
-import { Injectable } from '@nestjs/common';
-import { OrderDetailStatus, RoleName } from '@prisma/client';
-import { addDays, endOfMonth, startOfMonth, subMonths } from 'date-fns';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { OrderDetailStatus, PaymentStatus, RoleName } from '@prisma/client';
+import { endOfMonth, startOfMonth, subMonths } from 'date-fns';
 import { PrismaService } from 'src/prisma/prisma.service';
 
-import { calculatePercentageChange } from './../../utils/utils';
+import { calculatePercentageChange } from 'utils/utils';
+
+// Doanh thu (phí dịch vụ) chỉ tính trên các chuyến đã được xác nhận trở đi
+const REVENUE_STATUSES: OrderDetailStatus[] = [
+  OrderDetailStatus.CONFIRMED,
+  OrderDetailStatus.RECEIVED,
+  OrderDetailStatus.COMPLETED,
+];
 
 @Injectable()
 export class AnalyticsService {
   constructor(private readonly prismaService: PrismaService) {}
 
   async getCardAnalytics(): Promise<any> {
-    const currentDate = new Date();
+    const now = new Date();
+    const lastMonth = { gte: startOfMonth(subMonths(now, 1)), lte: endOfMonth(subMonths(now, 1)) };
+    const currentMonth = { gte: startOfMonth(now), lte: endOfMonth(now) };
 
-    // start date and end date of the last month
-    const lastMonthStartDate = new Date(startOfMonth(subMonths(currentDate, 1)));
-    const lastMonthEndDate = new Date(endOfMonth(subMonths(currentDate, 1)));
-
-    // start date and end date of the current month
-    const currentMonthStartDate = new Date(addDays(startOfMonth(currentDate), 1));
-    const currentMonthEndDate = new Date(endOfMonth(currentDate));
-
-    // const lastMonthStartDate = differenceInMonths(currentDate, 1);
-
-    const totalUsers = await this.prismaService.user.count();
-    // Fetch user data from the last month
-    const usersLastMonth = await this.prismaService.user.findMany({
-      where: {
-        createdAt: {
-          gte: lastMonthStartDate,
-          lt: lastMonthEndDate,
-        },
-      },
+    // Đơn chưa thanh toán tiền cọc không được tính là đơn hàng
+    const paidOrder = { paymentStatus: { not: PaymentStatus.PENDING } };
+    const revenueWhere = (createdAt: { gte: Date; lte: Date }) => ({
+      createdAt,
+      orderDetailStatus: { in: REVENUE_STATUSES },
     });
 
-    // Fetch user and order data for the previous month
-    const usersCurrentMonth = await this.prismaService.user.findMany({
-      where: {
-        createdAt: {
-          gte: currentMonthStartDate,
-          lt: currentMonthEndDate,
-        },
-      },
-    });
+    const [
+      totalUsers,
+      usersLastMonth,
+      usersCurrentMonth,
+      totalCars,
+      carsLastMonth,
+      carsCurrentMonth,
+      totalOrders,
+      ordersLastMonth,
+      ordersCurrentMonth,
+      revenueLastMonth,
+      revenueCurrentMonth,
+    ] = await this.prismaService.$transaction([
+      this.prismaService.user.count(),
+      this.prismaService.user.count({ where: { createdAt: lastMonth } }),
+      this.prismaService.user.count({ where: { createdAt: currentMonth } }),
+      this.prismaService.car.count(),
+      this.prismaService.car.count({ where: { createdAt: lastMonth } }),
+      this.prismaService.car.count({ where: { createdAt: currentMonth } }),
+      this.prismaService.order.count({ where: paidOrder }),
+      this.prismaService.order.count({ where: { ...paidOrder, createdAt: lastMonth } }),
+      this.prismaService.order.count({ where: { ...paidOrder, createdAt: currentMonth } }),
+      this.prismaService.orderDetail.aggregate({ where: revenueWhere(lastMonth), _sum: { serviceFee: true } }),
+      this.prismaService.orderDetail.aggregate({ where: revenueWhere(currentMonth), _sum: { serviceFee: true } }),
+    ]);
 
-    // Calculate the percentage change
-    const userPercentageChange = calculatePercentageChange(usersLastMonth.length, usersCurrentMonth.length) || 0;
-
-    const totalCars = await this.prismaService.car.count();
-    const carsLastMonth = await this.prismaService.car.findMany({
-      where: {
-        createdAt: {
-          gte: lastMonthStartDate,
-          lt: lastMonthEndDate,
-        },
-      },
-    });
-    const carsPreviousMonth = await this.prismaService.car.findMany({
-      where: {
-        createdAt: {
-          gte: currentMonthStartDate,
-          lt: currentMonthEndDate,
-        },
-      },
-    });
-    const carPercentageChange = calculatePercentageChange(carsLastMonth.length, carsPreviousMonth.length) || 0;
-
-    const totalOrders = await this.prismaService.order.count();
-    const ordersLastMonth = await this.prismaService.order.findMany({
-      where: {
-        createdAt: {
-          gte: lastMonthStartDate,
-          lt: lastMonthEndDate,
-        },
-      },
-    });
-    const ordersPreviousMonth = await this.prismaService.order.findMany({
-      where: {
-        createdAt: {
-          gte: currentMonthStartDate,
-          lt: currentMonthEndDate,
-        },
-      },
-    });
-    const orderPercentageChange = calculatePercentageChange(ordersLastMonth.length, ordersPreviousMonth.length) || 0;
-
-    const orderDetailsLastMonth = await this.prismaService.orderDetail.findMany({
-      where: {
-        createdAt: {
-          gte: lastMonthStartDate,
-          lt: lastMonthEndDate,
-        },
-        AND: {
-          OR: [
-            {
-              orderDetailStatus: OrderDetailStatus.CONFIRMED,
-            },
-            {
-              orderDetailStatus: OrderDetailStatus.RECEIVED,
-            },
-            {
-              orderDetailStatus: OrderDetailStatus.COMPLETED,
-            },
-          ],
-        },
-      },
-      select: {
-        serviceFee: true,
-      },
-    });
-    const orderDetailsPreviousMonth = await this.prismaService.orderDetail.findMany({
-      where: {
-        createdAt: {
-          gte: currentMonthStartDate,
-          lt: currentMonthEndDate,
-        },
-        AND: {
-          OR: [
-            {
-              orderDetailStatus: OrderDetailStatus.CONFIRMED,
-            },
-            {
-              orderDetailStatus: OrderDetailStatus.RECEIVED,
-            },
-            {
-              orderDetailStatus: OrderDetailStatus.COMPLETED,
-            },
-          ],
-        },
-      },
-      select: {
-        serviceFee: true,
-      },
-    });
-
-    const totalServiceFeeLastMonth = orderDetailsLastMonth.reduce(
-      (acc, orderDetail) => acc + Number(orderDetail.serviceFee),
-      0,
-    );
-    const totalServiceFeeCurrentMonth = orderDetailsPreviousMonth.reduce(
-      (acc, orderDetail) => acc + Number(orderDetail.serviceFee),
-      0,
-    );
-
-    const revenuePercentageChange =
-      calculatePercentageChange(totalServiceFeeLastMonth, totalServiceFeeCurrentMonth) || 0;
-    const totalRevenue = totalServiceFeeLastMonth + totalServiceFeeCurrentMonth;
+    const totalServiceFeeLastMonth = Number(revenueLastMonth._sum.serviceFee ?? 0);
+    const totalServiceFeeCurrentMonth = Number(revenueCurrentMonth._sum.serviceFee ?? 0);
 
     return {
       user: {
         totalUsers,
-        userPercentageChange,
+        userPercentageChange: calculatePercentageChange(usersLastMonth, usersCurrentMonth) || 0,
       },
       car: {
         totalCars,
-        carPercentageChange,
+        carPercentageChange: calculatePercentageChange(carsLastMonth, carsCurrentMonth) || 0,
       },
       order: {
         totalOrders,
-        orderPercentageChange,
+        orderPercentageChange: calculatePercentageChange(ordersLastMonth, ordersCurrentMonth) || 0,
       },
       revenue: {
-        totalRevenue,
-        revenuePercentageChange,
+        totalRevenue: totalServiceFeeLastMonth + totalServiceFeeCurrentMonth,
+        revenuePercentageChange: calculatePercentageChange(totalServiceFeeLastMonth, totalServiceFeeCurrentMonth) || 0,
       },
     };
   }
 
   async getRevenueAnalytics(fromDay: Date, toDay: Date): Promise<any> {
+    const from = new Date(fromDay);
+    const to = new Date(toDay);
+
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {
+      throw new BadRequestException('Khoảng thời gian không hợp lệ');
+    }
+
     const orderDetails = await this.prismaService.orderDetail.findMany({
       where: {
-        createdAt: {
-          gte: fromDay,
-          lt: toDay,
-        },
-        AND: {
-          OR: [
-            {
-              orderDetailStatus: OrderDetailStatus.CONFIRMED,
-            },
-            {
-              orderDetailStatus: OrderDetailStatus.RECEIVED,
-            },
-            {
-              orderDetailStatus: OrderDetailStatus.COMPLETED,
-            },
-          ],
-        },
+        createdAt: { gte: from, lt: to },
+        orderDetailStatus: { in: REVENUE_STATUSES },
       },
       select: {
         serviceFee: true,
@@ -193,56 +96,35 @@ export class AnalyticsService {
       },
     });
 
-    // const countMonth = differenceInMonths(new Date(toDay), new Date(fromDay)) + 1;
+    // Đánh chỉ số theo năm*12 + tháng để khoảng thời gian vắt qua năm mới vẫn đúng
+    const monthKey = (date: Date) => date.getFullYear() * 12 + date.getMonth();
+    const firstMonth = monthKey(from);
+    const monthCount = Math.min(monthKey(to) - firstMonth + 1, 36);
 
-    const startingMonthIndex = new Date(fromDay).getMonth();
-    const endingMonthIndex = new Date(toDay).getMonth();
+    const revenueByMonth = Array.from({ length: monthCount }, (_, offset) => ({
+      month: new Date(from.getFullYear(), from.getMonth() + offset, 1).toLocaleString('vi-VN', { month: 'short' }),
+      totalRevenue: 0,
+      totalOrder: 0,
+    }));
 
-    const revenueByMonth = Array.from({ length: endingMonthIndex - startingMonthIndex + 1 }, (_, monthIndex) => {
-      const monthName = new Date(new Date().getFullYear(), monthIndex + startingMonthIndex, 1).toLocaleString('vi-Vi', {
-        month: 'short',
-      });
+    orderDetails.forEach((orderDetail) => {
+      const bucket = revenueByMonth[monthKey(orderDetail.createdAt) - firstMonth];
 
-      return { month: monthName, totalRevenue: 0, totalOrder: 0 };
+      if (bucket) {
+        bucket.totalRevenue += Number(orderDetail.serviceFee ?? 0);
+        bucket.totalOrder += 1;
+      }
     });
-
-    if (revenueByMonth.length !== 0) {
-      orderDetails.forEach((orderDetail) => {
-        const month = new Date(orderDetail.createdAt).getMonth() - new Date(fromDay).getMonth();
-        revenueByMonth[month].totalRevenue += Number(orderDetail.serviceFee);
-        revenueByMonth[month].totalOrder += 1;
-      });
-    }
 
     return revenueByMonth;
   }
 
   async getUserTypeAnalytics(): Promise<any> {
-    const totalUsers = await this.prismaService.user.count();
-
-    const adminCount = await this.prismaService.user.count({
-      where: {
-        role: {
-          name: RoleName.ADMIN,
-        },
-      },
-    });
-
-    const ownerCount = await this.prismaService.user.count({
-      where: {
-        role: {
-          name: RoleName.CAROWNER,
-        },
-      },
-    });
-
-    const travelerCount = await this.prismaService.user.count({
-      where: {
-        role: {
-          name: RoleName.TRAVELER,
-        },
-      },
-    });
+    const [adminCount, ownerCount, travelerCount] = await this.prismaService.$transaction(
+      [RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER].map((name) =>
+        this.prismaService.user.count({ where: { role: { name } } }),
+      ),
+    );
 
     const data = [];
 

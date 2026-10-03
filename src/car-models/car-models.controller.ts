@@ -42,11 +42,7 @@ export class CarModelsController {
   @Roles(RoleName.ADMIN)
   @Post()
   createCarModel(@Body() createCarModelDto: CreateCarModelDto): Promise<any> {
-    try {
-      return this.carModelsService.createCarModel(createCarModelDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carModelsService.createCarModel(createCarModelDto);
   }
 
   @ApiOperation({ summary: 'Get all car models' })
@@ -87,11 +83,7 @@ export class CarModelsController {
   @Public()
   @Get()
   findAllCarModel(@Query('page') page: number, @Query('limit') limit: number): Promise<any> {
-    try {
-      return this.carModelsService.findAllCarModel(page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carModelsService.findAllCarModel(page, limit);
   }
 
   @ApiOperation({ summary: 'Get a car model by id' })
@@ -113,11 +105,7 @@ export class CarModelsController {
   @Public()
   @Get(':id')
   findOneById(@Param('id') id: string): Promise<CarModelDto> {
-    try {
-      return this.carModelsService.findOneById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carModelsService.findOneById(+id);
   }
 
   @ApiOperation({ summary: 'Update a car model by id' })
@@ -140,11 +128,7 @@ export class CarModelsController {
   @Roles(RoleName.ADMIN)
   @Patch(':id')
   updateById(@Param('id') id: string, @Body() updateCarModelDto: UpdateCarModelDto) {
-    try {
-      return this.carModelsService.updateById(+id, updateCarModelDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carModelsService.updateById(+id, updateCarModelDto);
   }
 
   @ApiOperation({ summary: 'Delete a car model by id' })
@@ -160,10 +144,6 @@ export class CarModelsController {
   @Roles(RoleName.ADMIN)
   @Delete(':id')
   removeById(@Param('id') id: string) {
-    try {
-      return this.carModelsService.removeById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carModelsService.removeById(+id);
   }
 }

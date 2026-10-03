@@ -1,80 +1,83 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Gender, RoleName } from '@prisma/client';
+import { Transform } from 'class-transformer';
+import {
+  IsDateString,
+  IsEmail,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+
+export const PHONE_PATTERN = /^\+?\d{9,14}$/;
+
+// Form thường gửi chuỗi rỗng cho trường bỏ trống; coi như không gửi để @IsOptional hoạt động
+const emptyToUndefined = ({ value }: { value: unknown }) => (value === '' || value === null ? undefined : value);
 
 export class CreateUserDto {
-  @ApiProperty({
-    example: 'Thien Phuoc',
-    type: String,
-  })
+  @ApiProperty({ example: 'Nguyễn Văn A' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(255)
   name: string;
 
-  @ApiProperty({
-    example: 'thienphuoc',
-    type: String,
-  })
+  @ApiProperty({ example: 'nguyenvana' })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   username: string;
 
-  @ApiProperty({
-    example: '123456',
-    type: String,
-  })
+  @ApiProperty({ example: '123456' })
   @IsString()
-  @IsNotEmpty()
+  @MinLength(6)
+  @MaxLength(100)
+  @Transform(emptyToUndefined)
   password: string;
 
-  @ApiProperty({
-    example: 'thienphuoc@gmail.com',
-    type: String,
-  })
+  @ApiProperty({ example: 'nguyenvana@gmail.com' })
   @IsEmail()
-  @IsNotEmpty()
+  @MaxLength(100)
   email: string;
 
-  @ApiProperty({
-    example: '0987654321',
-    type: String,
-  })
+  @ApiPropertyOptional({ example: '0905123456' })
+  @IsOptional()
+  @Matches(PHONE_PATTERN, { message: 'Số điện thoại không hợp lệ' })
+  @Transform(emptyToUndefined)
+  phone?: string;
+
+  @ApiPropertyOptional({ enum: Gender })
+  @IsOptional()
+  @IsEnum(Gender)
+  @Transform(emptyToUndefined)
+  gender?: Gender;
+
+  @ApiPropertyOptional({ example: '2000-01-01' })
+  @IsOptional()
+  @IsDateString()
+  @Transform(emptyToUndefined)
+  dateOfBirth?: string;
+
+  @ApiPropertyOptional({ example: 'Đà Nẵng' })
+  @IsOptional()
   @IsString()
-  @IsOptional()
-  phone: string;
+  @MaxLength(255)
+  @Transform(emptyToUndefined)
+  address?: string;
 
-  @ApiProperty({
-    example: 'MALE',
-    type: String,
-  })
-  @IsString()
+  @ApiPropertyOptional({ description: 'URL ảnh đã upload lên Cloudinary' })
   @IsOptional()
-  gender: string;
+  @IsUrl({ protocols: ['https'], require_protocol: true, host_whitelist: ['res.cloudinary.com'] })
+  @Transform(emptyToUndefined)
+  avatarUrl?: string;
 
-  @ApiProperty({
-    example: '1999-08-20',
-    type: Date,
-  })
-  @IsString()
+  @ApiPropertyOptional({ enum: RoleName })
   @IsOptional()
-  dateOfBirth: Date;
-
-  @ApiProperty({
-    example: 'Da Nang City',
-    type: String,
-  })
-  @IsString()
-  @IsOptional()
-  address: string;
-
-  @ApiProperty({
-    type: String,
-  })
-  @IsOptional()
-  avatarUrl: any;
-
-  @ApiProperty({
-    example: 'CUSTOMER',
-    type: String,
-  })
-  role: string;
+  @IsEnum(RoleName)
+  @Transform(emptyToUndefined)
+  role?: RoleName;
 }

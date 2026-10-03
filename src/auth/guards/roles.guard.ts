@@ -16,10 +16,7 @@ export class RolesGuard implements CanActivate {
     }
     const { user } = context.switchToHttp().getRequest();
 
-    return this.matchRoles(requiredRoles, user.role);
-  }
-
-  private matchRoles(requiredRoles: string[], userRoles: string[]): boolean {
-    return requiredRoles.some((role) => userRoles.includes(role));
+    // So khớp chính xác tên vai trò (trước đây dùng includes trên chuỗi nên có thể khớp một phần)
+    return !!user?.role && requiredRoles.includes(user.role);
   }
 }

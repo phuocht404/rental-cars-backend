@@ -23,6 +23,8 @@ import { CarImageDto, CreateCarImageDto, UpdateCarImageDto } from './dto';
 export class CarImagesController {
   constructor(private readonly carImagesService: CarImagesService) {}
 
+  @UseGuards(RolesGuard)
+  @Roles(RoleName.ADMIN)
   @Post()
   create(@Body() createCarImageDto: CreateCarImageDto) {
     return this.carImagesService.create(createCarImageDto);
@@ -67,11 +69,7 @@ export class CarImagesController {
   @Public()
   @Get()
   findAllCarImage(@Query('page') page: number = 1, @Query('limit') limit: number = 10): Promise<any> {
-    try {
-      return this.carImagesService.findAllCarImage(page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carImagesService.findAllCarImage(page, limit);
   }
 
   @ApiOperation({ summary: 'Get car image by id' })
@@ -95,11 +93,7 @@ export class CarImagesController {
   @Public()
   @Get(':id')
   findOneById(@Param('id') id: string): Promise<any> {
-    try {
-      return this.carImagesService.findOneById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carImagesService.findOneById(+id);
   }
 
   @ApiOperation({ summary: 'Get car images by car id' })
@@ -123,13 +117,11 @@ export class CarImagesController {
   @Public()
   @Get('car/:id')
   findOneByCarId(@Param('id') id: string): Promise<any> {
-    try {
-      return this.carImagesService.findOneByCarId(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carImagesService.findOneByCarId(+id);
   }
 
+  @UseGuards(RolesGuard)
+  @Roles(RoleName.ADMIN)
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateCarImageDto: UpdateCarImageDto): Promise<any> {
     return this.carImagesService.update(+id, updateCarImageDto);

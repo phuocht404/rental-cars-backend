@@ -10,7 +10,10 @@ describe('OrderDetailController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OrderDetailController],
       providers: [OrderDetailService],
-    }).compile();
+    })
+      // Tự tạo mock rỗng cho các dependency (PrismaService, CloudinaryService...)
+      .useMocker(() => ({}))
+      .compile();
 
     controller = module.get<OrderDetailController>(OrderDetailController);
   });

@@ -1,110 +1,153 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderDetailStatus, OrderStatus, PaymentStatus, RoleName } from '@prisma/client';
-import { OrderDetailService } from 'src/order-detail/order-detail.service';
+import { OrderDetailStatus, OrderStatus, PaymentStatus, Prisma, RoleName } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { formatDecimalToNumber, getPagination } from 'utils/utils';
+import { formatDecimalToNumber, getPagination, normalizeSearch, parseEnumList } from 'utils/utils';
 
-import { UpdateOrderDto } from './dto';
-import { priceCartItems } from './order-pricing';
+import { CartItemDto, UpdateOrderDto } from './dto';
+import { PricedItem, priceCartItems } from './order-pricing';
+
+const toNumberAmounts = (order: any) => ({
+  ...order,
+  totalAmount: formatDecimalToNumber(order.totalAmount),
+  deposits: formatDecimalToNumber(order.deposits),
+});
 
 @Injectable()
 export class OrdersService {
-  constructor(
-    private readonly prismaService: PrismaService,
-    private readonly orderDetailService: OrderDetailService,
-  ) {}
+  constructor(private readonly prismaService: PrismaService) {}
 
-  async createOrder(currentUser: any, createOrderDto: any): Promise<any> {
-    // Giá và tiền cọc luôn được tính lại ở server, bỏ qua giá trị client gửi lên
-    const items = await priceCartItems(this.prismaService, createOrderDto?.items);
+  /**
+   * Tạo đơn ở trạng thái chờ thanh toán. Đơn chờ/đã cọc chưa chiếm lịch xe (nhiều khách có thể
+   * cùng đặt cọc một khoảng ngày); lịch chỉ bị khoá khi chủ xe xác nhận, và bước xác nhận
+   * kiểm tra trùng lịch lại một lần nữa.
+   */
+  async createPendingOrder(currentUser: any, cartItems: CartItemDto[]): Promise<{ id: number; items: PricedItem[] }> {
+    return this.prismaService.$transaction(async (tx) => {
+      const items = await priceCartItems(tx, cartItems, currentUser.id);
 
-    const totalAmount = items.reduce((total, item) => total + item.totalAmount, 0);
-    const deposits = items.reduce((total, item) => total + item.deposits, 0);
-
-    const order = await this.prismaService.order.create({
-      data: {
-        totalAmount: totalAmount,
-        travelerId: currentUser.id,
-        deposits: deposits,
-        orderStatus: OrderStatus.PENDING,
-        paymentStatus: PaymentStatus.DEPOSIT,
-        OrderDetail: {
-          create: items.map((item) => ({
-            carId: item.carId,
-            pricePerDay: item.pricePerDay,
-            startDate: item.startDate,
-            endDate: item.endDate,
-            deposits: item.deposits,
-            totalAmount: item.totalAmount,
-            orderDetailStatus: OrderDetailStatus.PENDING,
-            paymentStatus: PaymentStatus.DEPOSIT,
-          })),
-        },
-      },
-      select: {
-        id: true,
-        totalAmount: true,
-        traveler: {
-          select: {
-            name: true,
+      const order = await tx.order.create({
+        data: {
+          totalAmount: items.reduce((total, item) => total + item.totalAmount, 0),
+          deposits: items.reduce((total, item) => total + item.deposits, 0),
+          travelerId: currentUser.id,
+          orderStatus: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PENDING,
+          OrderDetail: {
+            create: items.map((item) => ({
+              carId: item.carId,
+              pricePerDay: item.pricePerDay,
+              startDate: item.startDate,
+              endDate: item.endDate,
+              deposits: item.deposits,
+              totalAmount: item.totalAmount,
+              orderDetailStatus: OrderDetailStatus.PENDING,
+              paymentStatus: PaymentStatus.PENDING,
+            })),
           },
         },
-        OrderDetail: {
-          select: {
-            id: true,
-            car: {
-              select: {
-                name: true,
-              },
-            },
-            startDate: true,
-            endDate: true,
-            totalAmount: true,
-            orderDetailStatus: true,
-            paymentStatus: true,
-          },
-        },
-        travelerId: true,
-        orderStatus: true,
-        paymentStatus: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+        select: { id: true },
+      });
+
+      return { id: order.id, items };
     });
-
-    if (!order) {
-      throw new Error('Cannot create order');
-    }
-
-    return order;
   }
 
-  async findAllOrders(page: number, limit: number): Promise<any> {
-    const { _page, _limit } = getPagination(page, limit);
+  async attachStripeSession(orderId: number, sessionId: string) {
+    await this.prismaService.order.update({
+      where: { id: orderId },
+      data: { stripeSessionId: sessionId },
+    });
+  }
 
-    const totalOrders = await this.prismaService.order.count();
-    const totalPages = Math.ceil(totalOrders / _limit);
+  // Xoá đơn khi chưa kịp tạo được phiên thanh toán (lỗi từ Stripe)
+  async discardUnpaidOrder(orderId: number) {
+    await this.prismaService.order.deleteMany({
+      where: { id: orderId, paymentStatus: PaymentStatus.PENDING },
+    });
+  }
 
-    const offset = (_page - 1) * _limit;
+  /** Đánh dấu đã đặt cọc. Idempotent: gọi nhiều lần (webhook + trang success) vẫn an toàn. */
+  async markOrderDepositPaid(stripeSessionId: string) {
+    return this.prismaService.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { stripeSessionId },
+        select: { id: true, paymentStatus: true },
+      });
 
-    const orders = await this.prismaService.order.findMany({
-      skip: offset,
-      take: _limit,
-      orderBy: {
-        createdAt: 'desc',
-      },
+      if (!order || order.paymentStatus !== PaymentStatus.PENDING) return order;
+
+      await tx.order.update({
+        where: { id: order.id },
+        data: { paymentStatus: PaymentStatus.DEPOSIT },
+      });
+      await tx.orderDetail.updateMany({
+        where: { orderId: order.id, paymentStatus: PaymentStatus.PENDING },
+        data: { paymentStatus: PaymentStatus.DEPOSIT },
+      });
+
+      return { ...order, paymentStatus: PaymentStatus.DEPOSIT };
+    });
+  }
+
+  /** Huỷ đơn khi phiên thanh toán hết hạn hoặc người dùng bấm huỷ. Đơn đã cọc thì giữ nguyên. */
+  async cancelUnpaidOrder(stripeSessionId: string) {
+    const order = await this.prismaService.order.findUnique({
+      where: { stripeSessionId },
+      select: { id: true, paymentStatus: true },
     });
 
-    return {
-      data: orders.map((order: any) => {
-        return {
-          ...order,
-          totalAmount: formatDecimalToNumber(order.totalAmount),
-          deposits: formatDecimalToNumber(order.deposits),
-        };
+    if (!order || order.paymentStatus !== PaymentStatus.PENDING) return;
+
+    await this.prismaService.$transaction([
+      this.prismaService.order.update({
+        where: { id: order.id },
+        data: { orderStatus: OrderStatus.CANCELED },
       }),
+      this.prismaService.orderDetail.updateMany({
+        where: { orderId: order.id },
+        data: { orderDetailStatus: OrderDetailStatus.CANCELED, note: 'Chưa thanh toán tiền cọc' },
+      }),
+    ]);
+  }
+
+  async findAllOrders(
+    page: number,
+    limit: number,
+    filter: { q?: string; orderStatus?: string; paymentStatus?: string } = {},
+  ): Promise<any> {
+    const { _page, _limit } = getPagination(page, limit);
+    const q = normalizeSearch(filter.q);
+    const orderStatuses = parseEnumList(filter.orderStatus, OrderStatus);
+    const paymentStatuses = parseEnumList(filter.paymentStatus, PaymentStatus);
+
+    const where: Prisma.OrderWhereInput = {
+      ...(orderStatuses && { orderStatus: { in: orderStatuses } }),
+      ...(paymentStatuses && { paymentStatus: { in: paymentStatuses } }),
+      ...(q && {
+        OR: [
+          ...(/^\d+$/.test(q) ? [{ id: Number(q) }] : []),
+          { traveler: { name: { contains: q } } },
+          { traveler: { username: { contains: q } } },
+        ],
+      }),
+    };
+
+    const [totalOrders, orders] = await this.prismaService.$transaction([
+      this.prismaService.order.count({ where }),
+      this.prismaService.order.findMany({
+        where,
+        skip: (_page - 1) * _limit,
+        take: _limit,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+    ]);
+
+    return {
+      data: orders.map(toNumberAmounts),
       meta: {
-        totalPages,
+        totalPages: Math.ceil(totalOrders / _limit),
         _page,
         _limit,
         totalOrders,
@@ -155,9 +198,7 @@ export class OrdersService {
     }
 
     return {
-      ...order,
-      totalAmount: formatDecimalToNumber(order.totalAmount),
-      deposits: formatDecimalToNumber(order.deposits),
+      ...toNumberAmounts(order),
       traveler: order.traveler.name,
       orderDetails: order.OrderDetail.map((item: any) => {
         return {
@@ -167,6 +208,7 @@ export class OrdersService {
           deposits: formatDecimalToNumber(item.deposits),
           car: {
             ...item.car,
+            pricePerDay: formatDecimalToNumber(item.car.pricePerDay),
             images: item.car.CarImage.map((image: any) => image.url),
             CarImage: undefined,
           },
@@ -198,35 +240,15 @@ export class OrdersService {
         paymentStatus: true,
         createdAt: true,
         updatedAt: true,
+        OrderDetail: true,
       },
     });
 
-    if (!order) {
-      throw new NotFoundException(`Order with id ${id} not found`);
-    }
-
-    // get order detail by order id
-    const orderDetails = await this.prismaService.orderDetail.findMany({
-      where: {
-        orderId: order.id,
-      },
-    });
-
-    return { ...order, orderDetail: [...orderDetails] };
+    return { ...order, orderDetail: order.OrderDetail, OrderDetail: undefined };
   }
 
   async removeById(id: number): Promise<any> {
-    const exitsOrder = await this.prismaService.order.findUnique({
-      where: {
-        id,
-      },
-    });
-
-    if (!exitsOrder) {
-      throw new NotFoundException(`Order with id ${id} not found`);
-    }
-
-    // OrderDetail bị xoá theo (onDelete: Cascade)
+    // OrderDetail bị xoá theo (onDelete: Cascade); P2025 (không tồn tại) được filter đổi thành 404
     await this.prismaService.order.delete({
       where: {
         id,
@@ -236,39 +258,37 @@ export class OrdersService {
     return `This action removes a #${id} order`;
   }
 
-  async getMyOrders(currentUser: any, page: number, limit: number): Promise<any> {
+  async getMyOrders(
+    currentUser: any,
+    page: number,
+    limit: number,
+    filter: { orderStatus?: string; paymentStatus?: string } = {},
+  ): Promise<any> {
     const { _page, _limit } = getPagination(page, limit);
+    const orderStatuses = parseEnumList(filter.orderStatus, OrderStatus);
+    const paymentStatuses = parseEnumList(filter.paymentStatus, PaymentStatus);
+    const where: Prisma.OrderWhereInput = {
+      travelerId: currentUser.id,
+      ...(orderStatuses && { orderStatus: { in: orderStatuses } }),
+      ...(paymentStatuses && { paymentStatus: { in: paymentStatuses } }),
+    };
 
-    const totalOrders = await this.prismaService.order.count({
-      where: {
-        travelerId: currentUser.id,
-      },
-    });
-    const totalPages = Math.ceil(totalOrders / _limit);
-
-    const offset = (_page - 1) * _limit;
-
-    const orders = await this.prismaService.order.findMany({
-      where: {
-        travelerId: currentUser.id,
-      },
-      skip: offset,
-      take: _limit,
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    const [totalOrders, orders] = await this.prismaService.$transaction([
+      this.prismaService.order.count({ where }),
+      this.prismaService.order.findMany({
+        where,
+        skip: (_page - 1) * _limit,
+        take: _limit,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      }),
+    ]);
 
     return {
-      data: orders.map((order: any) => {
-        return {
-          ...order,
-          totalAmount: formatDecimalToNumber(order.totalAmount),
-          deposits: formatDecimalToNumber(order.deposits),
-        };
-      }),
+      data: orders.map(toNumberAmounts),
       meta: {
-        totalPages,
+        totalPages: Math.ceil(totalOrders / _limit),
         _page,
         _limit,
         totalOrders,

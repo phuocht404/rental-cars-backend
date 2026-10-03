@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -15,7 +15,13 @@ import { MetaSchema } from 'schemas';
 import { GetCurrentUser, Public, Roles } from 'src/auth/decorators';
 import { RolesGuard } from 'src/auth/guards';
 
-import { CreateOrderDetailDto, OrderDetailDto, UpdateOrderDetailDto } from './dto';
+import {
+  CreateOrderDetailDto,
+  OrderDetailDto,
+  UpdateOrderDetailDto,
+  UpdateOrderDetailStatusDto,
+  UpdatePaymentStatusDto,
+} from './dto';
 import { OrderDetailService } from './order-detail.service';
 
 @ApiBearerAuth()
@@ -109,8 +115,8 @@ export class OrderDetailController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.TRAVELER, RoleName.CAROWNER)
   @Get(':id')
-  findOneById(@Param('id') id: number, @GetCurrentUser() currentUser: any): Promise<any> {
-    return this.orderDetailService.findOneById(+id, currentUser);
+  findOneById(@Param('id', ParseIntPipe) id: number, @GetCurrentUser() currentUser: any): Promise<any> {
+    return this.orderDetailService.findOneById(id, currentUser);
   }
 
   @ApiOperation({ summary: 'Update a orderDetail by id' })
@@ -134,8 +140,8 @@ export class OrderDetailController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN)
   @Patch(':id')
-  updateById(@Param('id') id: number, @Body() updateOrderDetailDto: UpdateOrderDetailDto): Promise<any> {
-    return this.orderDetailService.updateById(+id, updateOrderDetailDto);
+  updateById(@Param('id', ParseIntPipe) id: number, @Body() updateOrderDetailDto: UpdateOrderDetailDto): Promise<any> {
+    return this.orderDetailService.updateById(id, updateOrderDetailDto);
   }
 
   @ApiOperation({ summary: 'Remove a orderDetail by id' })
@@ -158,14 +164,14 @@ export class OrderDetailController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN)
   @Delete(':id')
-  removeById(@Param('id') id: number): Promise<any> {
-    return this.orderDetailService.removeById(+id);
+  removeById(@Param('id', ParseIntPipe) id: number): Promise<any> {
+    return this.orderDetailService.removeById(id);
   }
 
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.TRAVELER, RoleName.CAROWNER)
   @Get('order/:orderId')
-  getAllByOrderId(@Param('orderId') orderId: number, @GetCurrentUser() currentUser: any): Promise<any> {
+  getAllByOrderId(@Param('orderId', ParseIntPipe) orderId: number, @GetCurrentUser() currentUser: any): Promise<any> {
     return this.orderDetailService.getAllByOrderId(orderId, currentUser);
   }
 
@@ -182,27 +188,27 @@ export class OrderDetailController {
   @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
   @Patch('/update/status/:id')
   updateOrderDetailStatusById(
-    @Param('id') id: number,
-    @Body() updateOrderDetailDto: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateOrderDetailDto: UpdateOrderDetailStatusDto,
     @GetCurrentUser() currentUser: any,
   ): Promise<any> {
-    return this.orderDetailService.updateOrderDetailStatusById(+id, updateOrderDetailDto, currentUser);
+    return this.orderDetailService.updateOrderDetailStatusById(id, updateOrderDetailDto, currentUser);
   }
 
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.CAROWNER)
   @Patch('/update/payment-status/:id')
   updatePaymentStatusById(
-    @Param('id') id: number,
-    @Body() body: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdatePaymentStatusDto,
     @GetCurrentUser() currentUser: any,
   ): Promise<any> {
-    return this.orderDetailService.updatePaymentStatusById(+id, body, currentUser);
+    return this.orderDetailService.updatePaymentStatusById(id, body, currentUser);
   }
 
   @Public()
   @Get('disable-date/car/:carId')
-  getDisableDateByCarId(@Param('carId') carId: number): Promise<any> {
+  getDisableDateByCarId(@Param('carId', ParseIntPipe) carId: number): Promise<any> {
     return this.orderDetailService.getDisableDateByCarId(carId);
   }
 

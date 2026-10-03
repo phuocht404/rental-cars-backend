@@ -1,9 +1,19 @@
 import { BadRequestException } from '@nestjs/common';
-import { OrderDetailStatus } from '@prisma/client';
+import { CarStatus, OrderDetailStatus, Prisma, PrismaClient } from '@prisma/client';
 import * as moment from 'moment';
-import { PrismaService } from 'src/prisma/prisma.service';
+
+import { CartItemDto } from './dto';
 
 export const DEPOSIT_RATE = 0.3;
+export const MAX_RENTAL_DAYS = 60;
+
+// Các trạng thái chiếm lịch xe: đã xác nhận hoặc đang thuê
+export const BLOCKING_ORDER_DETAIL_STATUSES: OrderDetailStatus[] = [
+  OrderDetailStatus.CONFIRMED,
+  OrderDetailStatus.RECEIVED,
+];
+
+type PrismaLike = PrismaClient | Prisma.TransactionClient;
 
 export interface PricedItem {
   carId: number;
@@ -21,32 +31,54 @@ export interface PricedItem {
  * Tính lại giá từ dữ liệu trong DB, không tin các giá trị tiền do client gửi lên.
  * Số ngày thuê tính cả ngày đầu và ngày cuối (giống `countDays` ở frontend).
  */
-export async function priceCartItems(prisma: PrismaService, items: any): Promise<PricedItem[]> {
+export async function priceCartItems(
+  prisma: PrismaLike,
+  items: CartItemDto[],
+  travelerId?: number,
+): Promise<PricedItem[]> {
   if (!Array.isArray(items) || items.length === 0) {
     throw new BadRequestException('Giỏ hàng trống');
   }
 
+  const carIds = items.map((item) => Number(item.carId));
+  if (new Set(carIds).size !== carIds.length) {
+    throw new BadRequestException('Mỗi xe chỉ được đặt một lần trong một đơn');
+  }
+
   const today = moment().startOf('day');
+
+  const cars = await prisma.car.findMany({
+    where: { id: { in: carIds } },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      userId: true,
+      pricePerDay: true,
+      CarImage: { select: { url: true }, take: 1 },
+    },
+  });
+  const carById = new Map(cars.map((car) => [car.id, car]));
+
   const priced: PricedItem[] = [];
 
   for (const item of items) {
-    const carId = Number(item?.carId);
-
-    if (!Number.isInteger(carId)) throw new BadRequestException('carId không hợp lệ');
-
-    const start = moment(item?.startDate, 'DD/MM/YYYY', true);
-    const end = moment(item?.endDate, 'DD/MM/YYYY', true);
+    const carId = Number(item.carId);
+    const start = moment(item.startDate, 'DD/MM/YYYY', true);
+    const end = moment(item.endDate, 'DD/MM/YYYY', true);
 
     if (!start.isValid() || !end.isValid()) throw new BadRequestException('Ngày thuê không hợp lệ');
     if (end.isBefore(start)) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu');
     if (start.isBefore(today)) throw new BadRequestException('Ngày bắt đầu không được ở quá khứ');
 
-    const car = await prisma.car.findUnique({
-      where: { id: carId },
-      select: { id: true, name: true, pricePerDay: true, CarImage: { select: { url: true }, take: 1 } },
-    });
+    const days = end.diff(start, 'days') + 1;
+    if (days > MAX_RENTAL_DAYS) throw new BadRequestException(`Chỉ được thuê tối đa ${MAX_RENTAL_DAYS} ngày`);
+
+    const car = carById.get(carId);
 
     if (!car) throw new BadRequestException(`Xe với id ${carId} không tồn tại`);
+    if (car.status !== CarStatus.AVAILABLE) throw new BadRequestException(`Xe "${car.name}" hiện không nhận đặt`);
+    if (travelerId && car.userId === travelerId) throw new BadRequestException('Bạn không thể thuê xe của chính mình');
 
     const startDate = new Date(start.format('YYYY-MM-DD'));
     const endDate = new Date(end.format('YYYY-MM-DD'));
@@ -55,9 +87,7 @@ export async function priceCartItems(prisma: PrismaService, items: any): Promise
     const overlapped = await prisma.orderDetail.findFirst({
       where: {
         carId,
-        orderDetailStatus: {
-          in: [OrderDetailStatus.CONFIRMED, OrderDetailStatus.RECEIVED],
-        },
+        orderDetailStatus: { in: BLOCKING_ORDER_DETAIL_STATUSES },
         startDate: { lte: endDate },
         endDate: { gte: startDate },
       },
@@ -66,7 +96,6 @@ export async function priceCartItems(prisma: PrismaService, items: any): Promise
 
     if (overlapped) throw new BadRequestException(`Xe "${car.name}" đã có lịch thuê trong khoảng thời gian này`);
 
-    const days = end.diff(start, 'days') + 1;
     const pricePerDay = Number(car.pricePerDay);
     const totalAmount = pricePerDay * days;
     const deposits = Math.round(totalAmount * DEPOSIT_RATE);

@@ -1,54 +1,37 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsDate, IsInt, IsNumber, Min } from 'class-validator';
 
 export class CreateOrderDetailDto {
-  @ApiProperty({
-    example: 1,
-    description: 'The order id',
-    required: true,
-    type: Number,
-  })
-  @IsNumber()
-  @IsNotEmpty()
+  @ApiProperty({ example: 1, type: Number })
+  @Type(() => Number)
+  @IsInt()
   orderId: number;
 
-  @ApiProperty({
-    example: 1,
-    description: 'The car id',
-    required: true,
-    type: Number,
-  })
-  @IsNumber()
-  @IsNotEmpty()
+  @ApiProperty({ example: 1, type: Number })
+  @Type(() => Number)
+  @IsInt()
   carId: number;
 
-  @ApiProperty({
-    example: 658000,
-    type: Number,
-  })
+  @ApiProperty({ example: 800000, type: Number })
+  @Type(() => Number)
   @IsNumber()
-  @IsNotEmpty()
+  @Min(0)
   pricePerDay: number;
 
-  @ApiProperty({
-    example: '2023-11-11',
-    type: Date,
-  })
-  @IsNotEmpty()
+  @ApiProperty({ example: '2026-10-20', type: Date })
+  @Type(() => Date)
+  @IsDate()
   startDate: Date;
 
-  @ApiProperty({
-    example: '2023-11-12',
-    type: Date,
-  })
-  @IsNotEmpty()
+  @ApiProperty({ example: '2026-10-22', type: Date })
+  @Type(() => Date)
+  @IsDate()
   endDate: Date;
 
-  @ApiProperty({
-    example: 4000000,
-    type: Number,
-  })
+  @ApiProperty({ example: 2400000, type: Number })
+  @Type(() => Number)
   @IsNumber()
-  @IsNotEmpty()
+  @Min(0)
   totalAmount: number;
 }

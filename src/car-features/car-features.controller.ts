@@ -1,5 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { RoleName } from '@prisma/client';
+import { Roles } from 'src/auth/decorators';
+import { RolesGuard } from 'src/auth/guards';
 
 import { CarFeaturesService } from './car-features.service';
 import { CreateCarFeatureDto } from './dto/create-car-feature.dto';
@@ -8,6 +11,8 @@ import { UpdateCarFeatureDto } from './dto/update-car-feature.dto';
 @ApiBearerAuth()
 @ApiTags('Car Features')
 @Controller('car-features')
+@UseGuards(RolesGuard)
+@Roles(RoleName.ADMIN)
 export class CarFeaturesController {
   constructor(private readonly carFeaturesService: CarFeaturesService) {}
 
