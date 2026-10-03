@@ -43,11 +43,7 @@ export class RolesController {
   @Roles(RoleName.ADMIN)
   @Post()
   createRole(@Body() createRoleDto: CreateRoleDto): Promise<RolesDto> {
-    try {
-      return this.rolesService.createRole(createRoleDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.rolesService.createRole(createRoleDto);
   }
 
   @ApiOperation({ summary: 'Get all roles' })
@@ -88,11 +84,7 @@ export class RolesController {
   @Roles(RoleName.ADMIN)
   @Get()
   findAllRoles(@Query('page') page: number, @Query('limit') limit: number): Promise<any[]> {
-    try {
-      return this.rolesService.findAllRoles(page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.rolesService.findAllRoles(page, limit);
   }
 
   @ApiOperation({ summary: 'Get a role by id' })
@@ -114,11 +106,7 @@ export class RolesController {
   @Roles(RoleName.ADMIN)
   @Get(':id')
   findOneById(@Param('id') id: string): Promise<RolesDto> {
-    try {
-      return this.rolesService.findOneById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.rolesService.findOneById(+id);
   }
 
   @ApiOperation({ summary: 'Update a role by id' })
@@ -141,11 +129,7 @@ export class RolesController {
   @Roles(RoleName.ADMIN)
   @Patch(':id')
   updateRole(@Param('id') id: string, @Body() updateRoleDto: UpdateRoleDto) {
-    try {
-      return this.rolesService.updateRole(+id, updateRoleDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.rolesService.updateRole(+id, updateRoleDto);
   }
 
   @ApiOperation({ summary: 'Delete a role by id' })
@@ -162,10 +146,6 @@ export class RolesController {
   @Roles(RoleName.ADMIN)
   @Delete(':id')
   removeRole(@Param('id') id: string): Promise<string> {
-    try {
-      return this.rolesService.removeRole(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.rolesService.removeRole(+id);
   }
 }

@@ -25,11 +25,7 @@ export class AnalyticsController {
   @UseGuards(RolesGuard)
   @Get()
   getCardAnalytics(): Promise<any> {
-    try {
-      return this.analyticsService.getCardAnalytics();
-    } catch (error) {
-      throw new Error(error.message);
-    }
+    return this.analyticsService.getCardAnalytics();
   }
 
   @ApiOperation({ summary: 'Get order analytics' })
@@ -47,14 +43,10 @@ export class AnalyticsController {
   @UseGuards(RolesGuard)
   @Get('revenue')
   getRevenueAnalytics(@Query('fromDay') fromDay: Date, @Query('toDay') toDay: Date): Promise<any> {
-    try {
-      const from = fromDay || new Date(new Date().getFullYear(), 0, 1);
-      const to = toDay || new Date();
+    const from = fromDay || new Date(new Date().getFullYear(), 0, 1);
+    const to = toDay || new Date();
 
-      return this.analyticsService.getRevenueAnalytics(from, to);
-    } catch (error) {
-      throw new Error(error.message);
-    }
+    return this.analyticsService.getRevenueAnalytics(from, to);
   }
 
   @UseGuards(RolesGuard)

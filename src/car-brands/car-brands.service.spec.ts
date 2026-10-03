@@ -8,7 +8,10 @@ describe('CarBrandsService', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [CarBrandsService],
-    }).compile();
+    })
+      // Tự tạo mock rỗng cho các dependency (PrismaService, CloudinaryService...)
+      .useMocker(() => ({}))
+      .compile();
 
     service = module.get<CarBrandsService>(CarBrandsService);
   });

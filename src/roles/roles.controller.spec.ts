@@ -10,7 +10,10 @@ describe('RolesController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [RolesController],
       providers: [RolesService],
-    }).compile();
+    })
+      // Tự tạo mock rỗng cho các dependency (PrismaService, CloudinaryService...)
+      .useMocker(() => ({}))
+      .compile();
 
     controller = module.get<RolesController>(RolesController);
   });

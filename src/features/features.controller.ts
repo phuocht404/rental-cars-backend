@@ -40,11 +40,7 @@ export class FeaturesController {
   @Roles(RoleName.ADMIN)
   @Post()
   createFeature(@Body() createFeatureDto: CreateFeatureDto): Promise<FeaturesDto> {
-    try {
-      return this.featuresService.createFeature(createFeatureDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.featuresService.createFeature(createFeatureDto);
   }
 
   @ApiOperation({ summary: 'Get all features' })
@@ -86,11 +82,7 @@ export class FeaturesController {
   @Public()
   @Get()
   findAllFeature(@Query('page') page: number, @Query('limit') limit: number): Promise<any> {
-    try {
-      return this.featuresService.findAllFeature(page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.featuresService.findAllFeature(page, limit);
   }
 
   @ApiOperation({ summary: 'Get a feature by id' })
@@ -110,11 +102,7 @@ export class FeaturesController {
   @Public()
   @Get(':id')
   findOneById(@Param('id') id: number) {
-    try {
-      return this.featuresService.findOneById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.featuresService.findOneById(+id);
   }
 
   @ApiOperation({ summary: 'Update a feature by id' })
@@ -135,11 +123,7 @@ export class FeaturesController {
   @Roles(RoleName.ADMIN)
   @Patch(':id')
   updateFeature(@Param('id') id: number, @Body() updateFeatureDto: UpdateFeatureDto): Promise<FeaturesDto> {
-    try {
-      return this.featuresService.updateFeature(+id, updateFeatureDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.featuresService.updateFeature(+id, updateFeatureDto);
   }
 
   @ApiOperation({ summary: 'Delete a feature by id' })
@@ -159,10 +143,6 @@ export class FeaturesController {
   @Roles(RoleName.ADMIN)
   @Delete(':id')
   removeFeature(@Param('id') id: number): Promise<string> {
-    try {
-      return this.featuresService.removeFeature(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.featuresService.removeFeature(+id);
   }
 }

@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsInt, IsString, IsUrl } from 'class-validator';
 
 export class CreateCarImageDto {
   @ApiProperty({
@@ -7,11 +8,14 @@ export class CreateCarImageDto {
     type: String,
   })
   @IsString()
+  @IsUrl()
   url: string;
 
   @ApiProperty({
     example: 1,
     type: Number,
   })
+  @Type(() => Number)
+  @IsInt()
   carId: number;
 }

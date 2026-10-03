@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { getPagination } from 'utils/utils';
@@ -20,7 +20,7 @@ export class RolesService {
     });
 
     if (exitsRole) {
-      throw new Error('Role already exists');
+      throw new ConflictException('Role already exists');
     }
 
     const role = await this.prismaService.role.create({

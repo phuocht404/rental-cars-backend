@@ -1,65 +1,79 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { RoleName } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { OrderStatus, Prisma, RoleName, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
-import { convertBase64ToFile, getPagination } from 'utils/utils';
+import { getPagination, normalizeSearch, parseEnumList } from 'utils/utils';
 
-import { UpdateRoleUserDto } from './dto';
+import { CreateUserDto, OwnerRegistrationDto, UpdatePasswordDto, UpdateRoleUserDto, UpdateUserDto } from './dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { SessionsService } from '../sessions/sessions.service';
+
+const DEFAULT_AVATAR_URL =
+  'https://res.cloudinary.com/dj1v6wmjv/image/upload/v1701074365/rental-cars-cloudinary/avatars/avatar-default.jpg';
+
+// Thông tin an toàn để trả về (không bao giờ có mật khẩu)
+const SAFE_USER_SELECT = {
+  id: true,
+  name: true,
+  username: true,
+  email: true,
+  phone: true,
+  gender: true,
+  dateOfBirth: true,
+  address: true,
+  avatarUrl: true,
+  status: true,
+  registerOwner: true,
+  registerAt: true,
+  role: { select: { name: true } },
+  createdAt: true,
+  updatedAt: true,
+};
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly sessionsService: SessionsService,
   ) {}
 
-  async getAllUsers(page: number, limit: number): Promise<any> {
+  async getAllUsers(page: number, limit: number, filter: { q?: string; status?: string; role?: string } = {}) {
     const { _page, _limit } = getPagination(page, limit);
+    const q = normalizeSearch(filter.q);
+    const statuses = parseEnumList(filter.status, UserStatus);
+    const roles = parseEnumList(filter.role, RoleName);
 
-    // Calculate the total number of users
-    const totalUsers = await this.prismaService.user.count();
-    const totalPages = Math.ceil(totalUsers / _limit);
+    const where: Prisma.UserWhereInput = {
+      ...(statuses && { status: { in: statuses } }),
+      ...(roles && { role: { name: { in: roles } } }),
+      ...(q && {
+        OR: [
+          { name: { contains: q } },
+          { username: { contains: q } },
+          { email: { contains: q } },
+          { phone: { contains: q } },
+        ],
+      }),
+    };
 
-    // Calculate the number of items to skip
-    const offset = (_page - 1) * _limit;
-
-    const users = await this.prismaService.user.findMany({
-      skip: offset,
-      take: _limit,
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        email: true,
-        phone: true,
-        gender: true,
-        dateOfBirth: true,
-        address: true,
-        avatarUrl: true,
-        status: true,
-        role: {
-          select: {
-            name: true,
-          },
+    const [totalUsers, users] = await this.prismaService.$transaction([
+      this.prismaService.user.count({ where }),
+      this.prismaService.user.findMany({
+        where,
+        skip: (_page - 1) * _limit,
+        take: _limit,
+        orderBy: {
+          createdAt: 'desc',
         },
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    // change role from object to string
-    const usersResponse = users.map((user) => {
-      return { ...user, role: user.role.name };
-    });
+        select: SAFE_USER_SELECT,
+      }),
+    ]);
 
     return {
-      data: usersResponse,
+      data: users.map((user) => ({ ...user, role: user.role?.name })),
       meta: {
-        totalPages,
+        totalPages: Math.ceil(totalUsers / _limit),
         _page,
         _limit,
         totalUsers,
@@ -67,123 +81,96 @@ export class UsersService {
     };
   }
 
-  async getUserById(id: number): Promise<any> {
-    const user = await this.prismaService.user.findFirst({
+  // Chủ xe và người thuê có chung ít nhất một chuyến thì được xem thông tin liên hệ của nhau
+  private async canSeeContact(targetId: number, currentUser: any): Promise<boolean> {
+    if (!currentUser) return false;
+    if (currentUser.role === RoleName.ADMIN || currentUser.id === targetId) return true;
+
+    const sharedTrip = await this.prismaService.orderDetail.findFirst({
       where: {
-        id: Number(id),
+        OR: [
+          { car: { userId: targetId }, order: { travelerId: currentUser.id } },
+          { car: { userId: currentUser.id }, order: { travelerId: targetId } },
+        ],
       },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        email: true,
-        phone: true,
-        gender: true,
-        dateOfBirth: true,
-        address: true,
-        avatarUrl: true,
-        status: true,
-        role: {
-          select: {
-            name: true,
-          },
-        },
-        Order: {
-          select: {
-            OrderDetail: {
-              select: {
-                carId: true,
-                orderDetailStatus: true,
-              },
-            },
-            orderStatus: true,
-          },
-        },
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: { id: true },
     });
 
-    // calculate success rate
-    const totalTrips = user.Order.length;
-    const totalSuccessTrips = user.Order.filter((order) => order.orderStatus === 'COMPLETED').length;
-    const successRate = (totalSuccessTrips / totalTrips) * 100 || 0;
+    return !!sharedTrip;
+  }
+
+  private async withTripStats(user: { id: number; role?: { name: RoleName } | null }, currentUser: any) {
+    const [totalOrders, completedOrders, canSeeContact] = await Promise.all([
+      this.prismaService.order.count({ where: { travelerId: user.id } }),
+      this.prismaService.order.count({ where: { travelerId: user.id, orderStatus: OrderStatus.COMPLETED } }),
+      this.canSeeContact(user.id, currentUser),
+    ]);
+
+    const result: any = {
+      ...user,
+      role: user.role?.name,
+      trips: completedOrders,
+      successRate: totalOrders > 0 ? Math.round((completedOrders / totalOrders) * 100) : 0,
+    };
+
+    if (!canSeeContact) {
+      // Ẩn thông tin cá nhân với người không liên quan
+      for (const key of [
+        'email',
+        'phone',
+        'address',
+        'dateOfBirth',
+        'gender',
+        'registerOwner',
+        'registerAt',
+        'status',
+      ]) {
+        delete result[key];
+      }
+    }
+
+    return result;
+  }
+
+  async getUserById(id: number, currentUser?: any): Promise<any> {
+    const user = await this.prismaService.user.findUnique({
+      where: { id: Number(id) },
+      select: SAFE_USER_SELECT,
+    });
 
     if (!user) throw new NotFoundException(`User with id ${id} not found`);
 
-    return {
-      ...user,
-      role: user.role.name,
-      trips: totalSuccessTrips,
-      successRate: successRate,
-      Order: undefined,
-    };
+    return this.withTripStats(user, currentUser);
   }
 
-  async getUserByUsername(username: string): Promise<any> {
+  async getUserByUsername(username: string, currentUser?: any): Promise<any> {
     const user = await this.prismaService.user.findUnique({
-      where: {
-        username,
-      },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        email: true,
-        phone: true,
-        gender: true,
-        dateOfBirth: true,
-        address: true,
-        avatarUrl: true,
-        status: true,
-        role: {
-          select: {
-            name: true,
-          },
-        },
-        createdAt: true,
-        updatedAt: true,
-        Order: {
-          where: {
-            orderStatus: 'COMPLETED',
-          },
-        },
-      },
+      where: { username },
+      select: SAFE_USER_SELECT,
     });
 
     if (!user) throw new NotFoundException(`User with username ${username} not found`);
 
-    return { ...user, role: user.role.name, trips: user.Order.length, Order: undefined };
+    return this.withTripStats(user, currentUser);
   }
 
   async getProfile(currentUser: any): Promise<any> {
-    return currentUser;
+    return this.getUserById(currentUser.id, currentUser);
   }
 
-  async createUser(data: any): Promise<any> {
+  async createUser(dto: CreateUserDto): Promise<any> {
+    const { role: roleName, avatarUrl, ...data } = dto;
+
     const roleId = await this.prismaService.role.findFirst({
       where: {
-        name: (data.role as RoleName) || RoleName.TRAVELER,
+        name: roleName || RoleName.TRAVELER,
       },
       select: {
         id: true,
       },
     });
 
-    // upload avatar
-    if (!data.avatarUrl) {
-      data.avatarUrl =
-        'https://res.cloudinary.com/dj1v6wmjv/image/upload/v1701074365/rental-cars-cloudinary/avatars/avatar-default.jpg';
-    } else {
-      const avatarFile = convertBase64ToFile(data.avatarUrl);
-
-      const nameImage = `${data.username}-${Date.now()}-avatar`;
-      const avatar = await this.cloudinaryService.uploadAvatar(avatarFile, nameImage);
-
-      data.avatarUrl = avatar.url;
-    }
-
-    delete data.role;
+    if (!roleId) throw new BadRequestException('Vai trò không hợp lệ');
 
     // hash password
     const hashedPassword = await bcrypt.hash(data.password, 10);
@@ -191,6 +178,8 @@ export class UsersService {
     const user = await this.prismaService.user.create({
       data: {
         ...data,
+        dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
+        avatarUrl: avatarUrl ?? DEFAULT_AVATAR_URL,
         password: hashedPassword,
         roleId: Number(roleId.id),
       },
@@ -215,24 +204,14 @@ export class UsersService {
       },
     });
 
-    if (!user) throw new Error('Cannot create user');
-
     return { ...user, role: user.role.name };
   }
 
-  async updateUser(id: number, data: any): Promise<any> {
-    const roleId = await this.prismaService.role.findFirst({
-      where: {
-        name: (data.role as RoleName) || RoleName.TRAVELER,
-      },
-      select: {
-        id: true,
-      },
-    });
+  async updateUser(id: number, body: UpdateUserDto, currentUser: any): Promise<any> {
+    const isAdmin = currentUser?.role === RoleName.ADMIN;
 
-    // hash password
-    if (data.password) {
-      data.password = await bcrypt.hash(data.password, 10);
+    if (!isAdmin && Number(id) !== currentUser?.id) {
+      throw new ForbiddenException('Bạn chỉ được cập nhật thông tin của chính mình');
     }
 
     const existUser = await this.prismaService.user.findUnique({
@@ -244,25 +223,40 @@ export class UsersService {
       },
     });
 
-    if (data.avatarUrl !== existUser.avatarUrl) {
-      const avatarFile = convertBase64ToFile(data.avatarUrl);
+    if (!existUser) throw new NotFoundException(`User with id ${id} not found`);
 
-      const nameImage = `${data.username}-${Date.now()}-avatar`;
-      const avatar = await this.cloudinaryService.uploadAvatar(avatarFile, nameImage);
+    // Chỉ cho phép các trường hồ sơ; vai trò, trạng thái, mật khẩu... chỉ admin mới được đổi
+    const data: any = {};
+    for (const key of ['name', 'email', 'phone', 'gender', 'address']) {
+      if (body[key] !== undefined) data[key] = body[key];
+    }
+    // Prisma cần Date (hoặc ISO datetime đầy đủ), client có thể gửi "YYYY-MM-DD"
+    if (body.dateOfBirth !== undefined) data.dateOfBirth = new Date(body.dateOfBirth);
 
-      data.avatarUrl = avatar.url;
+    if (isAdmin) {
+      if (body.username !== undefined) data.username = body.username;
+      if (body.status !== undefined) data.status = body.status;
+      if (body.password) data.password = await bcrypt.hash(body.password, 10);
+
+      if (body.role) {
+        const role = await this.prismaService.role.findFirst({
+          where: { name: body.role as RoleName },
+          select: { id: true },
+        });
+
+        if (!role) throw new BadRequestException('Vai trò không hợp lệ');
+
+        data.roleId = role.id;
+      }
     }
 
-    delete data.role;
+    if (body.avatarUrl !== undefined) data.avatarUrl = body.avatarUrl;
 
     const user = await this.prismaService.user.update({
       where: {
         id: Number(id),
       },
-      data: {
-        ...data,
-        roleId: Number(roleId.id),
-      },
+      data,
       select: {
         id: true,
         name: true,
@@ -284,25 +278,34 @@ export class UsersService {
       },
     });
 
-    if (!user) throw new NotFoundException(`User with id ${id} not found`);
+    // Bị khoá hoặc bị đổi mật khẩu bởi admin: đăng xuất mọi thiết bị; còn lại chỉ cần làm mới cache
+    if (isAdmin && (data.status === UserStatus.INACTIVE || data.password)) {
+      await this.sessionsService.revokeAllForUser(Number(id));
+    } else {
+      this.sessionsService.invalidateUser(Number(id));
+    }
 
     return { ...user, role: user.role.name };
   }
 
   async deleteUser(id: number): Promise<any> {
     const user = await this.prismaService.user.findUnique({
-      where: {
-        id: Number(id),
-      },
+      where: { id: Number(id) },
+      select: { id: true, name: true, _count: { select: { Order: true, Car: true } } },
     });
 
     if (!user) throw new NotFoundException(`User with id ${id} not found`);
 
-    await this.prismaService.user.delete({
-      where: {
-        id: Number(id),
-      },
-    });
+    // Người dùng đã có đơn hàng/xe thì chỉ khoá tài khoản để giữ lịch sử giao dịch
+    if (user._count.Order > 0 || user._count.Car > 0) {
+      await this.prismaService.user.update({ where: { id: user.id }, data: { status: UserStatus.INACTIVE } });
+      await this.sessionsService.revokeAllForUser(user.id);
+
+      return `User: ${user.name} has history, so the account was deactivated instead of deleted`;
+    }
+
+    await this.prismaService.user.delete({ where: { id: user.id } });
+    this.sessionsService.invalidateUser(user.id);
 
     return `User: ${user.name} has been deleted`;
   }
@@ -339,12 +342,14 @@ export class UsersService {
       },
     });
 
+    this.sessionsService.invalidateUser(Number(userId));
+
     return { ...user, role: user.role.name };
   }
 
   async uploadAvatar(currentUser: any, image: any): Promise<any> {
     const { id } = currentUser;
-    const { url } = image;
+    const url = image.secure_url ?? image.url;
 
     const user = await this.prismaService.user.update({
       where: {
@@ -376,16 +381,19 @@ export class UsersService {
 
     if (!user) throw new NotFoundException(`User with id ${id} not found`);
 
+    this.sessionsService.invalidateUser(Number(id));
+
     return { ...user, role: user.role.name };
   }
 
-  async ownerRegistration(body: any, currentUser: any): Promise<any> {
-    const { name, email, phone, licensePlates } = body;
+  async ownerRegistration(body: OwnerRegistrationDto, currentUser: any): Promise<any> {
+    const { name, licensePlates } = body;
 
     const isLicensePlates = await this.prismaService.car.findFirst({
       where: {
         licensePlates,
       },
+      select: { id: true },
     });
 
     if (isLicensePlates) throw new BadRequestException(`Biển số xe: ${licensePlates} đã tồn tại`);
@@ -397,10 +405,12 @@ export class UsersService {
       data: {
         name,
         registerOwner: true,
+        registerAt: new Date(),
       },
+      select: SAFE_USER_SELECT,
     });
 
-    return user;
+    return { ...user, role: user.role?.name };
   }
 
   async getAllOwnerRegistration(): Promise<any> {
@@ -422,55 +432,35 @@ export class UsersService {
     return users;
   }
 
-  async updateRequestOwnerRegistration(id: number, body: any): Promise<any> {
-    const { isConfirm } = body;
+  async updateRequestOwnerRegistration(id: number, isConfirm: boolean): Promise<any> {
+    const role = await this.prismaService.role.findFirst({
+      where: {
+        name: isConfirm ? RoleName.CAROWNER : RoleName.TRAVELER,
+      },
+      select: {
+        id: true,
+      },
+    });
 
-    if (isConfirm) {
-      const ownerRole = await this.prismaService.role.findFirst({
-        where: {
-          name: RoleName.CAROWNER,
-        },
-        select: {
-          id: true,
-        },
-      });
+    if (!role) throw new BadRequestException('Vai trò không tồn tại');
 
-      const user = await this.prismaService.user.update({
-        where: {
-          id: Number(id),
-        },
-        data: {
-          registerOwner: false,
-          roleId: ownerRole.id,
-        },
-      });
+    const user = await this.prismaService.user.update({
+      where: {
+        id: Number(id),
+      },
+      data: {
+        registerOwner: false,
+        roleId: role.id,
+      },
+      select: SAFE_USER_SELECT,
+    });
 
-      return user;
-    } else {
-      const travelerRole = await this.prismaService.role.findFirst({
-        where: {
-          name: RoleName.TRAVELER,
-        },
-        select: {
-          id: true,
-        },
-      });
+    this.sessionsService.invalidateUser(Number(id));
 
-      const user = await this.prismaService.user.update({
-        where: {
-          id: Number(id),
-        },
-        data: {
-          registerOwner: false,
-          roleId: travelerRole.id,
-        },
-      });
-
-      return user;
-    }
+    return { ...user, role: user.role?.name };
   }
 
-  async updatePassword(id: number, body: any): Promise<any> {
+  async updatePassword(id: number, body: UpdatePasswordDto, currentSessionId?: string): Promise<any> {
     const { currentPassword, newPassword, confirmNewPassword } = body;
 
     if (newPassword !== confirmNewPassword) throw new BadRequestException('Mật khẩu mới không khớp');
@@ -488,7 +478,7 @@ export class UsersService {
 
     if (!isMatch) throw new BadRequestException('Mật khẩu hiện tại không đúng');
 
-    const hashedPassword = await bcrypt.hash(currentPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     const user = await this.prismaService.user.update({
       where: {
@@ -497,7 +487,11 @@ export class UsersService {
       data: {
         password: hashedPassword,
       },
+      select: { id: true, username: true },
     });
+
+    // Đổi mật khẩu: đăng xuất mọi thiết bị khác, giữ lại thiết bị đang thao tác
+    await this.sessionsService.revokeAllForUser(Number(id), currentSessionId);
 
     return user;
   }

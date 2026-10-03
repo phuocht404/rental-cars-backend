@@ -10,7 +10,10 @@ describe('AnalyticsController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AnalyticsController],
       providers: [AnalyticsService],
-    }).compile();
+    })
+      // Tự tạo mock rỗng cho các dependency (PrismaService, CloudinaryService...)
+      .useMocker(() => ({}))
+      .compile();
 
     controller = module.get<AnalyticsController>(AnalyticsController);
   });

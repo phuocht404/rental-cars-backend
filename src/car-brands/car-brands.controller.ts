@@ -40,14 +40,10 @@ export class CarBrandsController {
   @ApiResponse({ status: 500, description: 'Internal server error' })
   @ApiBody({ type: CreateCarBrandDto })
   @Post()
-  @Public()
+  @Roles(RoleName.ADMIN)
   @UseGuards(RolesGuard)
   createCarBrand(@Body() createCarBrandDto: CreateCarBrandDto): Promise<CarBrandDto> {
-    try {
-      return this.carBrandsService.createCarBrand(createCarBrandDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carBrandsService.createCarBrand(createCarBrandDto);
   }
 
   @ApiOperation({ summary: 'Get all car brands' })
@@ -88,11 +84,7 @@ export class CarBrandsController {
   @Public()
   @Get()
   findAllCarBrands(@Query('page') page: number, @Query('limit') limit: number): Promise<any> {
-    try {
-      return this.carBrandsService.findAllCarBrands(page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carBrandsService.findAllCarBrands(page, limit);
   }
 
   @ApiOperation({ summary: 'Get car brand by id' })
@@ -118,11 +110,7 @@ export class CarBrandsController {
   @Public()
   @Get(':id')
   findOneById(@Param('id') id: number): Promise<CarBrandDto> {
-    try {
-      return this.carBrandsService.findOneById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carBrandsService.findOneById(+id);
   }
 
   @ApiOperation({ summary: 'Update a car brand' })
@@ -174,10 +162,6 @@ export class CarBrandsController {
   @Public()
   @Get('/and/models')
   findAllCarBrandsWithModels(): Promise<any> {
-    try {
-      return this.carBrandsService.findAllCarBrandsWithModels();
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.carBrandsService.findAllCarBrandsWithModels();
   }
 }

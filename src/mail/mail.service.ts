@@ -12,18 +12,8 @@ export class MailService {
     template: string;
     context: Record<string, any>;
   }): Promise<void> {
-    try {
-      const { to, subject, template, context, from } = options;
+    const { to, subject, template, context, from } = options;
 
-      await this.mailerService.sendMail({
-        to,
-        from,
-        subject,
-        template: 'order_confirmation',
-        context,
-      });
-    } catch (error) {
-      throw error;
-    }
+    await this.mailerService.sendMail({ to, from, subject, template, context });
   }
 }

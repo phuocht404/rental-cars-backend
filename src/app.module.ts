@@ -1,7 +1,8 @@
 import { ClassSerializerInterceptor, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { MulterModule } from '@nestjs/platform-express';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { JwtAuthGuard } from 'src/auth/guards';
 
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -13,6 +14,8 @@ import { CarFeaturesModule } from './car-features/car-features.module';
 import { CarImagesModule } from './car-images/car-images.module';
 import { CarModelsModule } from './car-models/car-models.module';
 import { CarsModule } from './cars/cars.module';
+import { validateEnv } from './common/config/env.validation';
+import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { FeaturesModule } from './features/features.module';
 import { OrderDetailModule } from './order-detail/order-detail.module';
@@ -23,14 +26,18 @@ import { RolesModule } from './roles/roles.module';
 import { StripeModule } from './stripe/stripe.module';
 import { UsersModule } from './users/users.module';
 import { MailModule } from './mail/mail.module';
+import { MaintenanceModule } from './maintenance/maintenance.module';
+import { SessionsModule } from './sessions/sessions.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env.local'] }),
-    MulterModule.register({
-      dest: './upload',
-    }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env.local', '.env'], validate: validateEnv }),
+    // 120 request / phút / IP cho toàn bộ API
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,
+    SessionsModule,
+    ScheduleModule.forRoot(),
+    MaintenanceModule,
     AuthModule,
     UsersModule,
     CarBrandsModule,
@@ -51,6 +58,10 @@ import { MailModule } from './mail/mail.module';
   ],
   controllers: [],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: AppThrottlerGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,

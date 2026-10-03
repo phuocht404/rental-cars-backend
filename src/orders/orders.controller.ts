@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -14,7 +14,7 @@ import { RoleName } from '@prisma/client';
 import { GetCurrentUser, Roles } from 'src/auth/decorators';
 import { RolesGuard } from 'src/auth/guards';
 
-import { CreateOrderDto, OrderDto, UpdateOrderDto } from './dto';
+import { OrderDto, UpdateOrderDto } from './dto';
 import { OrdersService } from './orders.service';
 
 @ApiBearerAuth()
@@ -22,33 +22,6 @@ import { OrdersService } from './orders.service';
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
-
-  @ApiOperation({ summary: 'Create a new order' })
-  @ApiExtraModels(OrderDto)
-  @ApiResponse({
-    status: 201,
-    description: 'The order has been successfully created.',
-    content: {
-      'application/json': {
-        schema: { $ref: getSchemaPath(OrderDto) },
-      },
-    },
-  })
-  @ApiResponse({ status: 400, description: 'Bad request.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 403, description: 'Forbidden.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
-  @ApiBody({ type: CreateOrderDto })
-  @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
-  @Post()
-  createOrder(@GetCurrentUser() currentUser: any, @Body() createOrderDto: any): Promise<any> {
-    try {
-      return this.ordersService.createOrder(currentUser, createOrderDto);
-    } catch (error) {
-      throw new Error(error);
-    }
-  }
 
   @ApiOperation({ summary: 'Get all orders' })
   @ApiExtraModels(OrderDto)
@@ -67,15 +40,20 @@ export class OrdersController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'q', required: false, description: 'Mã đơn hoặc tên khách' })
+  @ApiQuery({ name: 'orderStatus', required: false })
+  @ApiQuery({ name: 'paymentStatus', required: false })
   @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
+  @Roles(RoleName.ADMIN)
   @Get()
-  findAllOrders(@Query('page') page: number, @Query('limit') limit: number): Promise<any> {
-    try {
-      return this.ordersService.findAllOrders(page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+  findAllOrders(
+    @Query('page') page: number,
+    @Query('limit') limit: number,
+    @Query('q') q?: string,
+    @Query('orderStatus') orderStatus?: string,
+    @Query('paymentStatus') paymentStatus?: string,
+  ): Promise<any> {
+    return this.ordersService.findAllOrders(page, limit, { q, orderStatus, paymentStatus });
   }
 
   @ApiOperation({ summary: 'Get order by id' })
@@ -98,12 +76,8 @@ export class OrdersController {
   @UseGuards(RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
   @Get(':id')
-  findOneById(@Param('id') id: number): Promise<any> {
-    try {
-      return this.ordersService.findOneById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+  findOneById(@Param('id', ParseIntPipe) id: number, @GetCurrentUser() currentUser: any): Promise<any> {
+    return this.ordersService.findOneById(id, currentUser);
   }
 
   @ApiOperation({ summary: 'Update order by id' })
@@ -125,14 +99,10 @@ export class OrdersController {
   @ApiParam({ name: 'id', required: true, type: Number })
   @ApiBody({ type: UpdateOrderDto })
   @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
+  @Roles(RoleName.ADMIN)
   @Patch(':id')
-  updateOrderById(@Param('id') id: number, @Body() updateOrderDto: UpdateOrderDto): Promise<any> {
-    try {
-      return this.ordersService.updateOrderById(+id, updateOrderDto);
-    } catch (error) {
-      throw new Error(error);
-    }
+  updateOrderById(@Param('id', ParseIntPipe) id: number, @Body() updateOrderDto: UpdateOrderDto): Promise<any> {
+    return this.ordersService.updateOrderById(id, updateOrderDto);
   }
 
   @ApiOperation({ summary: 'Remove order by id' })
@@ -153,14 +123,10 @@ export class OrdersController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @ApiParam({ name: 'id', required: true, type: Number })
   @UseGuards(RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.CAROWNER, RoleName.TRAVELER)
+  @Roles(RoleName.ADMIN)
   @Delete(':id')
-  removeById(@Param('id') id: number): Promise<any> {
-    try {
-      return this.ordersService.removeById(+id);
-    } catch (error) {
-      throw new Error(error);
-    }
+  removeById(@Param('id', ParseIntPipe) id: number): Promise<any> {
+    return this.ordersService.removeById(id);
   }
 
   @ApiOperation({ summary: 'Get my orders' })
@@ -186,11 +152,9 @@ export class OrdersController {
     @GetCurrentUser() currentUser: any,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
+    @Query('orderStatus') orderStatus?: string,
+    @Query('paymentStatus') paymentStatus?: string,
   ): Promise<any> {
-    try {
-      return this.ordersService.getMyOrders(currentUser, page, limit);
-    } catch (error) {
-      throw new Error(error);
-    }
+    return this.ordersService.getMyOrders(currentUser, page, limit, { orderStatus, paymentStatus });
   }
 }
