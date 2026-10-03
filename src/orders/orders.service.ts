@@ -282,11 +282,32 @@ export class OrdersService {
         orderBy: {
           createdAt: 'desc',
         },
+        // Kèm thông tin xe/ngày của từng chuyến để trang "Lịch sử thuê xe" hiển thị dạng thẻ
+        include: {
+          OrderDetail: {
+            select: {
+              id: true,
+              startDate: true,
+              endDate: true,
+              orderDetailStatus: true,
+              car: { select: { name: true, slug: true, CarImage: { select: { url: true }, take: 1 } } },
+            },
+            orderBy: { startDate: 'asc' },
+          },
+        },
       }),
     ]);
 
     return {
-      data: orders.map(toNumberAmounts),
+      data: orders.map(({ OrderDetail, ...order }) => ({
+        ...toNumberAmounts(order),
+        trips: OrderDetail.map(({ car, ...trip }) => ({
+          ...trip,
+          carName: car?.name,
+          carSlug: car?.slug,
+          thumbnail: car?.CarImage[0]?.url ?? null,
+        })),
+      })),
       meta: {
         totalPages: Math.ceil(totalOrders / _limit),
         _page,

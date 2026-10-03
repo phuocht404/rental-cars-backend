@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { CarStatus, Fuel, OrderDetailStatus, Prisma, RoleName } from '@prisma/client';
+import { CarStatus, Fuel, OrderDetailStatus, Prisma, RoleName, Transmission } from '@prisma/client';
 import { BLOCKING_ORDER_DETAIL_STATUSES } from 'src/orders/order-pricing';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { formatDecimalToNumber, generateSlug, getPagination, normalizeSearch, parseEnumList } from 'utils/utils';
@@ -499,6 +499,12 @@ export class CarsService {
         lte: Number(filter.seats[1]),
       };
     }
+
+    const fuels = parseEnumList(filter.fuel, Fuel);
+    if (fuels) whereConditions.fuel = { in: fuels };
+
+    const transmissions = parseEnumList(filter.transmission, Transmission);
+    if (transmissions) whereConditions.transmission = { in: transmissions };
 
     if (filter.years?.length === 2) {
       whereConditions.yearOfManufacture = {

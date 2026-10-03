@@ -77,6 +77,8 @@ export class CarsController {
     @Query('priceRange') priceRange: string | string[],
     @Query('seats') seats: string | string[],
     @Query('years') years: string | string[],
+    @Query('fuel') fuel: string,
+    @Query('transmission') transmission: string,
     @Query('brandId') brandId: number,
     @Query('modelId') modelId: number,
   ): Promise<any> {
@@ -85,6 +87,8 @@ export class CarsController {
       priceRange: toArray(priceRange),
       seats: toArray(seats),
       years: toArray(years),
+      fuel,
+      transmission,
       brandId,
       modelId,
     });
