@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { OrderDetailStatus, OrderStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { syncOrderStates } from 'src/orders/order-status-sync';
 import { SessionsService } from 'src/sessions/sessions.service';
 
 // Phiên Stripe sống 30 phút; quá 2 giờ mà vẫn chưa thanh toán thì chắc chắn đã bỏ dở (kể cả khi webhook bị lỡ)
@@ -29,9 +30,20 @@ export class MaintenanceService {
       startDate: { lte: startOfTodayUtc() },
     };
 
+    const trips = await this.prisma.orderDetail.findMany({
+      where: overdue,
+      select: { id: true, orderId: true, paymentStatus: true },
+      take: 1000,
+    });
+    if (trips.length === 0) return { refunded: 0, unpaid: 0 };
+
+    const depositedIds = trips.filter((trip) => trip.paymentStatus !== PaymentStatus.PENDING).map((trip) => trip.id);
+    const unpaidIds = trips.filter((trip) => trip.paymentStatus === PaymentStatus.PENDING).map((trip) => trip.id);
+
+    // Điều kiện PENDING lặp lại trong where: chuyến vừa được xác nhận giữa chừng sẽ không bị huỷ nhầm
     const [refunded, unpaid] = await this.prisma.$transaction([
       this.prisma.orderDetail.updateMany({
-        where: { ...overdue, paymentStatus: { not: PaymentStatus.PENDING } },
+        where: { id: { in: depositedIds }, orderDetailStatus: OrderDetailStatus.PENDING },
         data: {
           orderDetailStatus: OrderDetailStatus.CANCELED,
           paymentStatus: PaymentStatus.REFUND,
@@ -39,10 +51,15 @@ export class MaintenanceService {
         },
       }),
       this.prisma.orderDetail.updateMany({
-        where: { ...overdue, paymentStatus: PaymentStatus.PENDING },
+        where: { id: { in: unpaidIds }, orderDetailStatus: OrderDetailStatus.PENDING },
         data: { orderDetailStatus: OrderDetailStatus.CANCELED, note: 'Tự động hủy đơn do quá hạn' },
       }),
     ]);
+
+    await syncOrderStates(
+      this.prisma,
+      trips.map((trip) => trip.orderId),
+    );
 
     if (refunded.count + unpaid.count > 0) {
       this.logger.log(`Auto-cancelled ${refunded.count} overdue deposited trips, ${unpaid.count} unpaid trips`);

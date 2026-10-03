@@ -7,6 +7,7 @@ import { CreateOrderDetailDto } from './dto/create-order-detail.dto';
 import { UpdateOrderDetailDto } from './dto/update-order-detail.dto';
 import { UpdateOrderDetailStatusDto, UpdatePaymentStatusDto } from './dto/update-order-detail-status.dto';
 import { MailService } from 'src/mail/mail.service';
+import { syncOrderStates } from 'src/orders/order-status-sync';
 
 const PUBLIC_USER_SELECT = {
   id: true,
@@ -174,9 +175,7 @@ export class OrderDetailService {
       },
     });
 
-    if (!orderDetail) {
-      throw new NotFoundException(`Order Detail with id ${id} not found`);
-    }
+    await syncOrderStates(this.prismaService, [orderDetail.orderId]);
 
     return orderDetail;
   }
@@ -197,6 +196,7 @@ export class OrderDetailService {
         id,
       },
     });
+    await syncOrderStates(this.prismaService, [exitsOrderDetail.orderId]);
 
     return `This action removes a #${id} orderDetail`;
   }
@@ -373,6 +373,9 @@ export class OrderDetailService {
         : []),
     ]);
 
+    // Đơn tổng đi theo trạng thái các chuyến con (huỷ hết → huỷ, hoàn thành hết → hoàn thành...)
+    await syncOrderStates(this.prismaService, [orderDetail.orderId]);
+
     const startDate = orderDetail.startDate.toISOString().split('T')[0];
     const endDate = orderDetail.endDate.toISOString().split('T')[0];
 
@@ -418,10 +421,14 @@ export class OrderDetailService {
       throw new ForbiddenException('Bạn không có quyền cập nhật thanh toán của chuyến đi này');
     }
 
-    return this.prismaService.orderDetail.update({
+    const updated = await this.prismaService.orderDetail.update({
       where: { id },
       data: { paymentStatus },
     });
+
+    await syncOrderStates(this.prismaService, [updated.orderId]);
+
+    return updated;
   }
 
   async getDisableDateByCarId(carId: number): Promise<any> {

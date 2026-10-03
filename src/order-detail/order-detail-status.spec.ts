@@ -26,6 +26,7 @@ const buildService = (current: Partial<Record<string, any>> = {}) => {
       update: jest.fn(),
     },
     car: { update: jest.fn() },
+    order: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
     $transaction: jest.fn().mockResolvedValue([
       {
         startDate: new Date('2030-01-01'),
@@ -33,6 +34,7 @@ const buildService = (current: Partial<Record<string, any>> = {}) => {
         pricePerDay: 1,
         deposits: 1,
         totalAmount: 1,
+        orderId: 7,
         order: { traveler: { email: 'a@b.c', name: 'A' } },
       },
     ]),
@@ -49,6 +51,8 @@ describe('OrderDetailService.updateOrderDetailStatusById', () => {
     await service.updateOrderDetailStatusById(10, { orderDetailStatus: OrderDetailStatus.CONFIRMED }, OWNER);
 
     expect(prisma.$transaction).toHaveBeenCalled();
+    // Đơn tổng được đồng bộ theo trạng thái chuyến vừa đổi
+    expect(prisma.order.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: [7] } } }));
   });
 
   it('không cho xác nhận chuyến chưa thanh toán tiền cọc', async () => {
