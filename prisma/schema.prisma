@@ -21,28 +21,49 @@ model Role {
 }
 
 model User {
-  id            Int        @id @default(autoincrement()) @map("ma_nguoi_dung")
-  username      String     @unique @map("tai_khoan") @db.VarChar(100)
-  password      String     @map("mat_khau") @db.VarChar(100)
-  name          String?    @map("ten_nguoi_dung") @db.VarChar(255)
-  email         String?    @unique @map("email") @db.VarChar(100)
-  phone         String?    @unique @map("so_dien_thoai") @db.VarChar(11)
-  gender        Gender?    @default(OTHER) @map("gioi_tinh")
-  dateOfBirth   DateTime?  @map("ngay_sinh") @db.Date
-  address       String?    @map("dia_chi") @db.VarChar(255)
-  avatarUrl     String?    @map("avatar_url") @db.LongText
-  role          Role?      @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  roleId        Int?       @map("ma_vai_tro")
-  createdAt     DateTime   @default(now()) @map("ngay_tao")
-  updatedAt     DateTime   @updatedAt @map("ngay_cap_nhat")
-  status        UserStatus @default(ACTIVE) @map("trang_thai")
+  id            Int           @id @default(autoincrement()) @map("ma_nguoi_dung")
+  username      String        @unique @map("tai_khoan") @db.VarChar(100)
+  password      String        @map("mat_khau") @db.VarChar(100)
+  name          String?       @map("ten_nguoi_dung") @db.VarChar(255)
+  email         String?       @unique @map("email") @db.VarChar(100)
+  phone         String?       @unique @map("so_dien_thoai") @db.VarChar(15)
+  gender        Gender?       @default(OTHER) @map("gioi_tinh")
+  dateOfBirth   DateTime?     @map("ngay_sinh") @db.Date
+  address       String?       @map("dia_chi") @db.VarChar(255)
+  avatarUrl     String?       @map("avatar_url") @db.LongText
+  role          Role?         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId        Int?          @map("ma_vai_tro")
+  createdAt     DateTime      @default(now()) @map("ngay_tao")
+  updatedAt     DateTime      @updatedAt @map("ngay_cap_nhat")
+  status        UserStatus    @default(ACTIVE) @map("trang_thai")
   Order         Order[]
   Review        Review[]
   Car           Car[]
-  registerOwner Boolean    @default(false) @map("dang_ky_chu_xe")
-  registerAt    DateTime?  @map("ngay_dang_ky_chu_xe")
+  registerOwner Boolean       @default(false) @map("dang_ky_chu_xe")
+  registerAt    DateTime?     @map("ngay_dang_ky_chu_xe")
+  AuthSession   AuthSession[]
 
   @@map("nguoi_dung")
+}
+
+// Mỗi lần đăng nhập là một phiên (một thiết bị). Refresh token gắn với phiên và được xoay vòng;
+// thu hồi phiên (đăng xuất, đổi mật khẩu, khoá tài khoản) làm mọi token của phiên đó mất hiệu lực.
+model AuthSession {
+  id          String    @id @default(uuid()) @map("ma_phien") @db.VarChar(36)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int       @map("ma_nguoi_dung")
+  // jti của refresh token hợp lệ hiện tại và của token ngay trước đó (để cho phép ân hạn khi refresh đồng thời)
+  currentJti  String    @map("jti_hien_tai") @db.VarChar(36)
+  previousJti String?   @map("jti_truoc_do") @db.VarChar(36)
+  rotatedAt   DateTime? @map("xoay_vong_luc")
+  userAgent   String?   @map("thiet_bi") @db.VarChar(255)
+  expiresAt   DateTime  @map("het_han")
+  revokedAt   DateTime? @map("thu_hoi_luc")
+  createdAt   DateTime  @default(now()) @map("ngay_tao")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("phien_dang_nhap")
 }
 
 model CarBrand {
@@ -89,7 +110,8 @@ model Car {
   CarColor          CarColor?     @relation(fields: [carColorId], references: [id], onDelete: Cascade)
   carColorId        Int?          @map("ma_mau_sac_xe")
   CarImage          CarImage[]
-  user              User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Restrict: chủ xe còn xe thì không xoá cứng được, chỉ chuyển trạng thái
+  user              User?         @relation(fields: [userId], references: [id], onDelete: Restrict)
   userId            Int?          @map("ma_nguoi_dung")
 
   @@index([status])
@@ -142,16 +164,19 @@ model CarFeature {
 }
 
 model Order {
-  id            Int            @id @default(autoincrement()) @map("ma_don_hang")
-  deposits      Decimal        @map("tien_dat_coc") @db.Decimal(10, 2)
-  totalAmount   Decimal        @map("tong_tien") @db.Decimal(10, 2)
-  traveler      User?          @relation(fields: [travelerId], references: [id], onDelete: Cascade)
-  travelerId    Int?           @map("ma_nguoi_dung")
-  orderStatus   OrderStatus    @default(PENDING) @map("trang_thai_don_hang")
-  paymentStatus PaymentStatus? @default(PENDING) @map("trang_thai_thanh_toan")
-  createdAt     DateTime       @default(now()) @map("ngay_tao")
-  updatedAt     DateTime       @updatedAt @map("ngay_cap_nhat")
-  OrderDetail   OrderDetail[]
+  id              Int            @id @default(autoincrement()) @map("ma_don_hang")
+  deposits        Decimal        @map("tien_dat_coc") @db.Decimal(10, 2)
+  totalAmount     Decimal        @map("tong_tien") @db.Decimal(10, 2)
+  // Restrict: không để việc xoá người dùng kéo theo mất lịch sử đơn hàng/doanh thu
+  traveler        User?          @relation(fields: [travelerId], references: [id], onDelete: Restrict)
+  travelerId      Int?           @map("ma_nguoi_dung")
+  orderStatus     OrderStatus    @default(PENDING) @map("trang_thai_don_hang")
+  paymentStatus   PaymentStatus? @default(PENDING) @map("trang_thai_thanh_toan")
+  // Checkout session của Stripe ứng với đơn, dùng để đối soát khi webhook/redirect trả về
+  stripeSessionId String?        @unique @map("stripe_session_id") @db.VarChar(255)
+  createdAt       DateTime       @default(now()) @map("ngay_tao")
+  updatedAt       DateTime       @updatedAt @map("ngay_cap_nhat")
+  OrderDetail     OrderDetail[]
 
   @@index([travelerId])
   @@map("don_hang")
@@ -161,7 +186,7 @@ model OrderDetail {
   id                Int               @id @default(autoincrement()) @map("ma_chi_tiet_don_hang")
   order             Order?            @relation(fields: [orderId], references: [id], onDelete: Cascade)
   orderId           Int?              @map("ma_don_hang")
-  car               Car?              @relation(fields: [carId], references: [id], onDelete: Cascade)
+  car               Car?              @relation(fields: [carId], references: [id], onDelete: Restrict)
   carId             Int?              @map("ma_xe")
   pricePerDay       Decimal           @map("gia_thue_theo_ngay") @db.Decimal(10, 2)
   deposits          Decimal?          @map("tien_dat_coc") @db.Decimal(10, 2)
@@ -192,6 +217,7 @@ model Review {
   createdAt     DateTime     @default(now()) @map("ngay_tao")
   updatedAt     DateTime     @updatedAt @map("ngay_cap_nhat")
 
+  @@index([customerId])
   @@map("danh_gia")
 }
 

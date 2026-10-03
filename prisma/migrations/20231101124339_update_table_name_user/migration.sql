@@ -11,10 +11,10 @@ ALTER TABLE `danh_gia` DROP FOREIGN KEY `danh_gia_ma_nguoi_dung_fkey`;
 ALTER TABLE `don_hang` DROP FOREIGN KEY `don_hang_ma_nguoi_dung_fkey`;
 
 -- DropForeignKey
-ALTER TABLE `user` DROP FOREIGN KEY `User_ma_vai_tro_fkey`;
+ALTER TABLE `User` DROP FOREIGN KEY `User_ma_vai_tro_fkey`;
 
 -- DropTable
-DROP TABLE `user`;
+DROP TABLE `User`;
 
 -- CreateTable
 CREATE TABLE `nguoi_dung` (
